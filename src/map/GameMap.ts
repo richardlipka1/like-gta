@@ -5,7 +5,7 @@ import { PoliceStation } from './buildings/PoliceStation';
 import { Post } from './buildings/Post';
 import { Block } from './buildings/Block';
 import { Street } from './Street';
-import { MAP_TILES_W, MAP_TILES_H, TILE_PX } from '../constants';
+import { MAP_TILES_W, MAP_TILES_H, TILE_PX, CANVAS_WIDTH, CANVAS_HEIGHT } from '../constants';
 import type { Car } from '../entities/vehicles/Car';
 import type { Pedestrian } from '../entities/Pedestrian';
 
@@ -82,8 +82,8 @@ export class GameMap {
     drawTiles(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
         const startCol = Math.floor(camX / TILE_PX);
         const startRow = Math.floor(camY / TILE_PX);
-        const endCol = Math.min(MAP_TILES_W, startCol + Math.ceil(800 / TILE_PX) + 1);
-        const endRow = Math.min(MAP_TILES_H, startRow + Math.ceil(600 / TILE_PX) + 1);
+        const endCol = Math.min(MAP_TILES_W, startCol + Math.ceil(CANVAS_WIDTH / TILE_PX) + 1);
+        const endRow = Math.min(MAP_TILES_H, startRow + Math.ceil(CANVAS_HEIGHT / TILE_PX) + 1);
 
         for (let r = Math.max(0, startRow); r < endRow; r++) {
             for (let c = Math.max(0, startCol); c < endCol; c++) {

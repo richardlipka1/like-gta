@@ -12,6 +12,10 @@ export class Policeman extends Character {
     private patrolTimer: number = 0;
     private patrolInterval: number = 2 + Math.random() * 2;
 
+    private static readonly SHOOT_INTERVAL = 1.5; // seconds between police shots
+    private static readonly SHOOT_RANGE = 150; // pixels within which police shoots
+    private static readonly CHASE_RANGE = 400; // pixels within which police chases
+
     constructor(x: number, y: number, target: Player) {
         super();
         this.x = x;
@@ -29,9 +33,9 @@ export class Policeman extends Character {
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         if (this.target.starLevel > 0) {
-            if (dist < 150) {
+            if (dist < Policeman.SHOOT_RANGE) {
                 this.state = 'shoot';
-            } else if (dist < 400) {
+            } else if (dist < Policeman.CHASE_RANGE) {
                 this.state = 'chase';
             } else {
                 this.state = 'patrol';
@@ -54,7 +58,7 @@ export class Policeman extends Character {
             }
             if (this.state === 'shoot') {
                 this.shootTimer += dt;
-                if (this.shootTimer >= 1.5) {
+                if (this.shootTimer >= Policeman.SHOOT_INTERVAL) {
                     this.shootTimer = 0;
                     const norm = dist > 0 ? dist : 1;
                     bullets.push(new Bullet(

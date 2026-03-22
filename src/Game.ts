@@ -42,14 +42,21 @@ export class Game {
     init(): void {
         this.canvas.width = CANVAS_WIDTH;
         this.canvas.height = CANVAS_HEIGHT;
+        this.initializeEntities();
+        this.running = true;
+        requestAnimationFrame(t => this.gameLoop(t));
+    }
+
+    private static readonly PED_POSITIONS = [
+        [7, 12], [9, 12], [12, 12], [20, 12], [22, 12],
+        [30, 12], [7, 20], [20, 20], [30, 20],
+    ];
+
+    private initializeEntities(): void {
         this.map.generate();
 
-        const pedPositions = [
-            [7, 12], [9, 12], [12, 12], [20, 12], [22, 12],
-            [30, 12], [7, 20], [20, 20], [30, 20],
-        ];
-        for (let i = 0; i < pedPositions.length; i++) {
-            const [tx, ty] = pedPositions[i];
+        for (let i = 0; i < Game.PED_POSITIONS.length; i++) {
+            const [tx, ty] = Game.PED_POSITIONS[i];
             this.map.pedestrians.push(new Pedestrian(tx * TILE_PX, ty * TILE_PX, i % 3));
         }
 
@@ -62,12 +69,10 @@ export class Game {
         this.police.push(new Policeman(12 * TILE_PX, 12 * TILE_PX, this.player));
         this.police.push(new Policeman(20 * TILE_PX, 20 * TILE_PX, this.player));
         this.police.push(new Policeman(30 * TILE_PX, 10 * TILE_PX, this.player));
-
-        this.running = true;
-        requestAnimationFrame(t => this.gameLoop(t));
     }
 
     private gameLoop(timestamp: number): void {
+        // Cap delta time to 50ms to prevent physics issues on frame drops or tab focus
         const dt = Math.min((timestamp - this.lastTime) / 1000, 0.05);
         this.lastTime = timestamp;
 
@@ -255,25 +260,6 @@ export class Game {
         this.bullets = [];
         this.player = new Player(10 * TILE_PX, 10 * TILE_PX);
         this.map = new GameMap();
-        this.map.generate();
-
-        const pedPositions = [
-            [7, 12], [9, 12], [12, 12], [20, 12], [22, 12],
-            [30, 12], [7, 20], [20, 20], [30, 20],
-        ];
-        for (let i = 0; i < pedPositions.length; i++) {
-            const [tx, ty] = pedPositions[i];
-            this.map.pedestrians.push(new Pedestrian(tx * TILE_PX, ty * TILE_PX, i % 3));
-        }
-
-        this.map.cars.push(new VWBeetle(12 * TILE_PX, 5 * TILE_PX));
-        this.map.cars.push(new Porsche(20 * TILE_PX, 5 * TILE_PX));
-        this.map.cars.push(new Van(9 * TILE_PX, 15 * TILE_PX));
-        this.map.cars.push(new Ambulance(22 * TILE_PX, 15 * TILE_PX));
-        this.map.cars.push(new PoliceCar(30 * TILE_PX, 15 * TILE_PX));
-
-        this.police.push(new Policeman(12 * TILE_PX, 12 * TILE_PX, this.player));
-        this.police.push(new Policeman(20 * TILE_PX, 20 * TILE_PX, this.player));
-        this.police.push(new Policeman(30 * TILE_PX, 10 * TILE_PX, this.player));
+        this.initializeEntities();
     }
 }

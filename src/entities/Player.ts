@@ -12,6 +12,8 @@ export class Player extends Character {
     lives: number = 3;
     shootCooldown: number = 0;
 
+    private static readonly SHOOT_COOLDOWN = 0.3; // seconds between shots
+
     constructor(x: number, y: number) {
         super();
         this.x = x;
@@ -37,7 +39,7 @@ export class Player extends Character {
 
         this.shootCooldown -= dt;
         if (input.justPressed(' ') && this.shootCooldown <= 0) {
-            this.shootCooldown = 0.3;
+            this.shootCooldown = Player.SHOOT_COOLDOWN;
             const bx = this.x + this.width / 2;
             const by = this.y + this.height / 2;
             let bdx = 0, bdy = 0;
