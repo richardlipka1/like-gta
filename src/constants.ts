@@ -1,0 +1,9 @@
+export const CANVAS_WIDTH = 800;
+export const CANVAS_HEIGHT = 600;
+export const PIXEL_SIZE = 4;
+export const TILE_SIZE = 16;
+export const TILE_PX = TILE_SIZE * PIXEL_SIZE; // 64
+export const MAP_TILES_W = 40;
+export const MAP_TILES_H = 30;
+export const WORLD_W = MAP_TILES_W * TILE_PX;
+export const WORLD_H = MAP_TILES_H * TILE_PX;
