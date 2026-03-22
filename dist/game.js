@@ -673,19 +673,15 @@
       let dx = 0, dy = 0;
       if (input.isDown("ArrowUp") || input.isDown("w") || input.isDown("W")) {
         dy = -1;
-        this.direction = "up";
       }
       if (input.isDown("ArrowDown") || input.isDown("s") || input.isDown("S")) {
         dy = 1;
-        this.direction = "down";
       }
       if (input.isDown("ArrowLeft") || input.isDown("a") || input.isDown("A")) {
         dx = -1;
-        this.direction = "left";
       }
       if (input.isDown("ArrowRight") || input.isDown("d") || input.isDown("D")) {
         dx = 1;
-        this.direction = "right";
       }
       if (dx !== 0 && dy !== 0) {
         dx *= 0.707;
@@ -695,14 +691,7 @@
       this.y += dy * this.carSpeed * dt;
       this.driver.x = this.x;
       this.driver.y = this.y;
-      if (dx > 0)
-        this.direction = "right";
-      else if (dx < 0)
-        this.direction = "left";
-      else if (dy > 0)
-        this.direction = "down";
-      else if (dy < 0)
-        this.direction = "up";
+      this.updateDirection(dx, dy);
     }
     /** Autonomous NPC driving — moves the car when no player is driving. */
     updateNpc(dt, isRoad) {
@@ -720,13 +709,16 @@
         this.x = nextX;
         this.y = nextY;
       }
-      if (this.npcVelocityX > 0)
+      this.updateDirection(this.npcVelocityX, this.npcVelocityY);
+    }
+    updateDirection(dx, dy) {
+      if (dx > 0)
         this.direction = "right";
-      else if (this.npcVelocityX < 0)
+      else if (dx < 0)
         this.direction = "left";
-      else if (this.npcVelocityY > 0)
+      else if (dy > 0)
         this.direction = "down";
-      else if (this.npcVelocityY < 0)
+      else if (dy < 0)
         this.direction = "up";
     }
     update(_dt) {
@@ -862,9 +854,58 @@
     static {
       this.WALK_INTERVAL = 0.28;
     }
+    static {
+      this.SHOOT_FREQ_START = 880;
+    }
+    static {
+      this.SHOOT_FREQ_END = 110;
+    }
+    static {
+      this.SHOOT_DURATION = 0.18;
+    }
+    static {
+      this.SHOOT_GAIN = 0.25;
+    }
+    static {
+      this.HORN_FREQ = 466;
+    }
+    static {
+      this.HORN_GAIN = 0.2;
+    }
+    static {
+      this.HORN_DURATION = 0.45;
+    }
+    static {
+      this.WALK_FREQ = 130;
+    }
+    static {
+      this.WALK_GAIN = 0.07;
+    }
+    static {
+      this.WALK_DURATION = 0.07;
+    }
+    static {
+      this.ENGINE_FREQ_IDLE = 55;
+    }
+    static {
+      this.ENGINE_FREQ_MOVING = 110;
+    }
+    static {
+      this.ENGINE_GAIN_IDLE = 0.05;
+    }
+    static {
+      this.ENGINE_GAIN_MOVING = 0.09;
+    }
+    static {
+      this.ENGINE_GAIN_START = 0.06;
+    }
+    static {
+      this.ENGINE_RAMP_TIME = 0.15;
+    }
     getCtx() {
       if (!this.audioCtx) {
-        this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        this.audioCtx = new AudioCtx();
       }
       return this.audioCtx;
     }
@@ -875,12 +916,12 @@
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.type = "square";
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.18);
-      gain.gain.setValueAtTime(0.25, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + 0.18);
+      osc.frequency.setValueAtTime(_SoundManager.SHOOT_FREQ_START, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(_SoundManager.SHOOT_FREQ_END, ctx.currentTime + _SoundManager.SHOOT_DURATION);
+      gain.gain.setValueAtTime(_SoundManager.SHOOT_GAIN, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + _SoundManager.SHOOT_DURATION);
       osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.18);
+      osc.stop(ctx.currentTime + _SoundManager.SHOOT_DURATION);
     }
     playHorn() {
       const ctx = this.getCtx();
@@ -889,12 +930,12 @@
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.type = "square";
-      osc.frequency.setValueAtTime(466, ctx.currentTime);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime + 0.32);
-      gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + 0.45);
+      osc.frequency.setValueAtTime(_SoundManager.HORN_FREQ, ctx.currentTime);
+      gain.gain.setValueAtTime(_SoundManager.HORN_GAIN, ctx.currentTime);
+      gain.gain.setValueAtTime(_SoundManager.HORN_GAIN, ctx.currentTime + 0.32);
+      gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + _SoundManager.HORN_DURATION);
       osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.45);
+      osc.stop(ctx.currentTime + _SoundManager.HORN_DURATION);
     }
     updateWalk(isWalking, dt) {
       if (!isWalking) {
@@ -914,11 +955,11 @@
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.type = "square";
-      osc.frequency.setValueAtTime(130, ctx.currentTime);
-      gain.gain.setValueAtTime(0.07, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + 0.07);
+      osc.frequency.setValueAtTime(_SoundManager.WALK_FREQ, ctx.currentTime);
+      gain.gain.setValueAtTime(_SoundManager.WALK_GAIN, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + _SoundManager.WALK_DURATION);
       osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.07);
+      osc.stop(ctx.currentTime + _SoundManager.WALK_DURATION);
     }
     startEngine() {
       if (this.engineOsc)
@@ -929,8 +970,8 @@
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(55, ctx.currentTime);
-      gain.gain.setValueAtTime(0.06, ctx.currentTime);
+      osc.frequency.setValueAtTime(_SoundManager.ENGINE_FREQ_IDLE, ctx.currentTime);
+      gain.gain.setValueAtTime(_SoundManager.ENGINE_GAIN_START, ctx.currentTime);
       osc.start(ctx.currentTime);
       this.engineOsc = osc;
       this.engineGain = gain;
@@ -939,10 +980,10 @@
       if (!this.engineOsc || !this.engineGain)
         return;
       const ctx = this.getCtx();
-      const targetFreq = isMoving ? 110 : 55;
-      const targetGain = isMoving ? 0.09 : 0.05;
-      this.engineOsc.frequency.setTargetAtTime(targetFreq, ctx.currentTime, 0.15);
-      this.engineGain.gain.setTargetAtTime(targetGain, ctx.currentTime, 0.15);
+      const targetFreq = isMoving ? _SoundManager.ENGINE_FREQ_MOVING : _SoundManager.ENGINE_FREQ_IDLE;
+      const targetGain = isMoving ? _SoundManager.ENGINE_GAIN_MOVING : _SoundManager.ENGINE_GAIN_IDLE;
+      this.engineOsc.frequency.setTargetAtTime(targetFreq, ctx.currentTime, _SoundManager.ENGINE_RAMP_TIME);
+      this.engineGain.gain.setTargetAtTime(targetGain, ctx.currentTime, _SoundManager.ENGINE_RAMP_TIME);
     }
     stopEngine() {
       if (!this.engineOsc || !this.engineGain)

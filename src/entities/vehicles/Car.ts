@@ -46,10 +46,10 @@ export abstract class Car extends Entity {
     handleInput(input: InputHandler, dt: number): void {
         if (!this.driver) return;
         let dx = 0, dy = 0;
-        if (input.isDown('ArrowUp') || input.isDown('w') || input.isDown('W')) { dy = -1; this.direction = 'up'; }
-        if (input.isDown('ArrowDown') || input.isDown('s') || input.isDown('S')) { dy = 1; this.direction = 'down'; }
-        if (input.isDown('ArrowLeft') || input.isDown('a') || input.isDown('A')) { dx = -1; this.direction = 'left'; }
-        if (input.isDown('ArrowRight') || input.isDown('d') || input.isDown('D')) { dx = 1; this.direction = 'right'; }
+        if (input.isDown('ArrowUp') || input.isDown('w') || input.isDown('W')) { dy = -1; }
+        if (input.isDown('ArrowDown') || input.isDown('s') || input.isDown('S')) { dy = 1; }
+        if (input.isDown('ArrowLeft') || input.isDown('a') || input.isDown('A')) { dx = -1; }
+        if (input.isDown('ArrowRight') || input.isDown('d') || input.isDown('D')) { dx = 1; }
 
         if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; }
         this.x += dx * this.carSpeed * dt;
@@ -58,10 +58,7 @@ export abstract class Car extends Entity {
         this.driver.x = this.x;
         this.driver.y = this.y;
 
-        if (dx > 0) this.direction = 'right';
-        else if (dx < 0) this.direction = 'left';
-        else if (dy > 0) this.direction = 'down';
-        else if (dy < 0) this.direction = 'up';
+        this.updateDirection(dx, dy);
     }
 
     /** Autonomous NPC driving — moves the car when no player is driving. */
@@ -86,11 +83,14 @@ export abstract class Car extends Entity {
             this.y = nextY;
         }
 
-        // Update facing direction
-        if (this.npcVelocityX > 0) this.direction = 'right';
-        else if (this.npcVelocityX < 0) this.direction = 'left';
-        else if (this.npcVelocityY > 0) this.direction = 'down';
-        else if (this.npcVelocityY < 0) this.direction = 'up';
+        this.updateDirection(this.npcVelocityX, this.npcVelocityY);
+    }
+
+    private updateDirection(dx: number, dy: number): void {
+        if (dx > 0) this.direction = 'right';
+        else if (dx < 0) this.direction = 'left';
+        else if (dy > 0) this.direction = 'down';
+        else if (dy < 0) this.direction = 'up';
     }
 
     update(_dt: number): void {}

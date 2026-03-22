@@ -3,11 +3,30 @@ export class SoundManager {
     private engineOsc: OscillatorNode | null = null;
     private engineGain: GainNode | null = null;
     private walkTimer: number = 0;
+
     private static readonly WALK_INTERVAL = 0.28;
+    private static readonly SHOOT_FREQ_START = 880;
+    private static readonly SHOOT_FREQ_END = 110;
+    private static readonly SHOOT_DURATION = 0.18;
+    private static readonly SHOOT_GAIN = 0.25;
+    private static readonly HORN_FREQ = 466;
+    private static readonly HORN_GAIN = 0.2;
+    private static readonly HORN_DURATION = 0.45;
+    private static readonly WALK_FREQ = 130;
+    private static readonly WALK_GAIN = 0.07;
+    private static readonly WALK_DURATION = 0.07;
+    private static readonly ENGINE_FREQ_IDLE = 55;
+    private static readonly ENGINE_FREQ_MOVING = 110;
+    private static readonly ENGINE_GAIN_IDLE = 0.05;
+    private static readonly ENGINE_GAIN_MOVING = 0.09;
+    private static readonly ENGINE_GAIN_START = 0.06;
+    private static readonly ENGINE_RAMP_TIME = 0.15;
 
     private getCtx(): AudioContext {
         if (!this.audioCtx) {
-            this.audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext as typeof AudioContext;
+            this.audioCtx = new AudioCtx();
         }
         return this.audioCtx;
     }
@@ -19,12 +38,12 @@ export class SoundManager {
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.type = 'square';
-        osc.frequency.setValueAtTime(880, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.18);
-        gain.gain.setValueAtTime(0.25, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+        osc.frequency.setValueAtTime(SoundManager.SHOOT_FREQ_START, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(SoundManager.SHOOT_FREQ_END, ctx.currentTime + SoundManager.SHOOT_DURATION);
+        gain.gain.setValueAtTime(SoundManager.SHOOT_GAIN, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + SoundManager.SHOOT_DURATION);
         osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.18);
+        osc.stop(ctx.currentTime + SoundManager.SHOOT_DURATION);
     }
 
     playHorn(): void {
@@ -34,12 +53,12 @@ export class SoundManager {
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.type = 'square';
-        osc.frequency.setValueAtTime(466, ctx.currentTime);
-        gain.gain.setValueAtTime(0.2, ctx.currentTime);
-        gain.gain.setValueAtTime(0.2, ctx.currentTime + 0.32);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+        osc.frequency.setValueAtTime(SoundManager.HORN_FREQ, ctx.currentTime);
+        gain.gain.setValueAtTime(SoundManager.HORN_GAIN, ctx.currentTime);
+        gain.gain.setValueAtTime(SoundManager.HORN_GAIN, ctx.currentTime + 0.32);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + SoundManager.HORN_DURATION);
         osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.45);
+        osc.stop(ctx.currentTime + SoundManager.HORN_DURATION);
     }
 
     updateWalk(isWalking: boolean, dt: number): void {
@@ -61,11 +80,11 @@ export class SoundManager {
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.type = 'square';
-        osc.frequency.setValueAtTime(130, ctx.currentTime);
-        gain.gain.setValueAtTime(0.07, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.07);
+        osc.frequency.setValueAtTime(SoundManager.WALK_FREQ, ctx.currentTime);
+        gain.gain.setValueAtTime(SoundManager.WALK_GAIN, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + SoundManager.WALK_DURATION);
         osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.07);
+        osc.stop(ctx.currentTime + SoundManager.WALK_DURATION);
     }
 
     startEngine(): void {
@@ -76,8 +95,8 @@ export class SoundManager {
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(55, ctx.currentTime);
-        gain.gain.setValueAtTime(0.06, ctx.currentTime);
+        osc.frequency.setValueAtTime(SoundManager.ENGINE_FREQ_IDLE, ctx.currentTime);
+        gain.gain.setValueAtTime(SoundManager.ENGINE_GAIN_START, ctx.currentTime);
         osc.start(ctx.currentTime);
         this.engineOsc = osc;
         this.engineGain = gain;
@@ -86,10 +105,10 @@ export class SoundManager {
     updateEngine(isMoving: boolean): void {
         if (!this.engineOsc || !this.engineGain) return;
         const ctx = this.getCtx();
-        const targetFreq = isMoving ? 110 : 55;
-        const targetGain = isMoving ? 0.09 : 0.05;
-        this.engineOsc.frequency.setTargetAtTime(targetFreq, ctx.currentTime, 0.15);
-        this.engineGain.gain.setTargetAtTime(targetGain, ctx.currentTime, 0.15);
+        const targetFreq = isMoving ? SoundManager.ENGINE_FREQ_MOVING : SoundManager.ENGINE_FREQ_IDLE;
+        const targetGain = isMoving ? SoundManager.ENGINE_GAIN_MOVING : SoundManager.ENGINE_GAIN_IDLE;
+        this.engineOsc.frequency.setTargetAtTime(targetFreq, ctx.currentTime, SoundManager.ENGINE_RAMP_TIME);
+        this.engineGain.gain.setTargetAtTime(targetGain, ctx.currentTime, SoundManager.ENGINE_RAMP_TIME);
     }
 
     stopEngine(): void {
