@@ -107,4 +107,11 @@ export class GameMap {
         if (col < 0 || col >= MAP_TILES_W || row < 0 || row >= MAP_TILES_H) return true;
         return this.tiles[row][col] === TileType.BUILDING;
     }
+
+    isRoad(worldX: number, worldY: number): boolean {
+        const col = Math.floor(worldX / TILE_PX);
+        const row = Math.floor(worldY / TILE_PX);
+        if (col < 0 || col >= MAP_TILES_W || row < 0 || row >= MAP_TILES_H) return false;
+        return this.tiles[row][col] === TileType.ROAD;
+    }
 }

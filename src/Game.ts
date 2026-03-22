@@ -12,6 +12,7 @@ import { PoliceCar } from './entities/vehicles/PoliceCar';
 import { Van } from './entities/vehicles/Van';
 import { Ambulance } from './entities/vehicles/Ambulance';
 import { Pedestrian } from './entities/Pedestrian';
+import { SoundManager } from './SoundManager';
 
 export class Game {
     canvas: HTMLCanvasElement;
@@ -28,6 +29,7 @@ export class Game {
     private lastTime: number = 0;
     private gameOverTimer: number = 0;
     private gameOver: boolean = false;
+    private sounds: SoundManager;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -37,6 +39,7 @@ export class Game {
         this.map = new GameMap();
         this.player = new Player(10 * TILE_PX, 10 * TILE_PX);
         this.renderer = new Renderer(this.ctx);
+        this.sounds = new SoundManager();
     }
 
     init(): void {
@@ -60,11 +63,25 @@ export class Game {
             this.map.pedestrians.push(new Pedestrian(tx * TILE_PX, ty * TILE_PX, i % 3));
         }
 
-        this.map.cars.push(new VWBeetle(12 * TILE_PX, 5 * TILE_PX));
-        this.map.cars.push(new Porsche(20 * TILE_PX, 5 * TILE_PX));
-        this.map.cars.push(new Van(9 * TILE_PX, 15 * TILE_PX));
-        this.map.cars.push(new Ambulance(22 * TILE_PX, 15 * TILE_PX));
-        this.map.cars.push(new PoliceCar(30 * TILE_PX, 15 * TILE_PX));
+        const beetle = new VWBeetle(12 * TILE_PX, 5 * TILE_PX);
+        beetle.npcVelocityX = 70;
+        this.map.cars.push(beetle);
+
+        const porsche = new Porsche(20 * TILE_PX, 5 * TILE_PX);
+        porsche.npcVelocityX = -90;
+        this.map.cars.push(porsche);
+
+        const van = new Van(9 * TILE_PX, 15 * TILE_PX);
+        van.npcVelocityX = 55;
+        this.map.cars.push(van);
+
+        const ambulance = new Ambulance(22 * TILE_PX, 15 * TILE_PX);
+        ambulance.npcVelocityX = -65;
+        this.map.cars.push(ambulance);
+
+        const policeCar = new PoliceCar(30 * TILE_PX, 15 * TILE_PX);
+        policeCar.npcVelocityX = 80;
+        this.map.cars.push(policeCar);
 
         this.police.push(new Policeman(12 * TILE_PX, 12 * TILE_PX, this.player));
         this.police.push(new Policeman(20 * TILE_PX, 20 * TILE_PX, this.player));
@@ -92,14 +109,33 @@ export class Game {
             return;
         }
 
-        this.player.handleInput(this.input, dt, this.bullets, () => this.handleEnterCar());
-
+        // Use if/else so entering and exiting a car cannot happen in the same frame
         if (this.player.inCar) {
+            const prevX = this.player.inCar.x;
+            const prevY = this.player.inCar.y;
             this.player.inCar.handleInput(this.input, dt);
+            const isMoving = this.player.inCar.x !== prevX || this.player.inCar.y !== prevY;
+            this.sounds.updateEngine(isMoving);
+
+            if (this.input.justPressed('h') || this.input.justPressed('H')) {
+                this.sounds.playHorn();
+            }
+
             if (this.input.justPressed('e') || this.input.justPressed('E')) {
                 const car = this.player.inCar;
                 this.player.inCar = null;
                 car.exit();
+                this.sounds.stopEngine();
+            }
+        } else {
+            const prevX = this.player.x;
+            const prevY = this.player.y;
+            const bulletsBefore = this.bullets.length;
+            this.player.handleInput(this.input, dt, this.bullets, () => this.handleEnterCar());
+            const isWalking = this.player.x !== prevX || this.player.y !== prevY;
+            this.sounds.updateWalk(isWalking, dt);
+            if (this.bullets.length > bulletsBefore) {
+                this.sounds.playShoot();
             }
         }
 
@@ -118,6 +154,10 @@ export class Game {
         for (const ped of this.map.pedestrians) {
             ped.update(dt);
             this.clampToWorld(ped);
+        }
+
+        for (const car of this.map.cars) {
+            car.updateNpc(dt, (x, y) => this.map.isRoad(x, y));
         }
 
         for (const b of this.bullets) {
@@ -164,6 +204,7 @@ export class Game {
             if (car.canEnter(this.player)) {
                 car.enter(this.player);
                 this.player.inCar = car;
+                this.sounds.startEngine();
                 break;
             }
         }
@@ -253,6 +294,7 @@ export class Game {
     }
 
     private reset(): void {
+        this.sounds.stopEngine();
         this.score = 0;
         this.gameOver = false;
         this.gameOverTimer = 0;
