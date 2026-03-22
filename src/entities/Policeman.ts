@@ -23,7 +23,7 @@ export class Policeman extends Character {
     }
 
     updateWithBullets(dt: number, bullets: Bullet[]): void {
-        if (!this.target.active && !this.target.inCar) return;
+        if (!this.target.active) return;
         const dx = this.target.x - this.x;
         const dy = this.target.y - this.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
