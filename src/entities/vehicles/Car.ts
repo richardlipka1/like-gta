@@ -8,6 +8,17 @@ export abstract class Car extends Entity {
     abstract carSpeed: number;
     driver: Character | null = null;
     direction: 'up' | 'down' | 'left' | 'right' = 'right';
+    private orientation: 'horizontal' | 'vertical' = 'horizontal';
+
+    /** Car's natural width when oriented horizontally (facing left/right). */
+    get baseWidth(): number {
+        return this.orientation === 'horizontal' ? this.width : this.height;
+    }
+
+    /** Car's natural height when oriented horizontally (facing left/right). */
+    get baseHeight(): number {
+        return this.orientation === 'horizontal' ? this.height : this.width;
+    }
 
     /** NPC autonomous movement velocity (px/s). Set to non-zero to enable NPC driving. */
     npcVelocityX: number = 0;
@@ -114,10 +125,28 @@ export abstract class Car extends Entity {
     }
 
     private updateDirection(dx: number, dy: number): void {
+        if (dx === 0 && dy === 0) return;
+
+        const prevDirection = this.direction;
         if (dx > 0) this.direction = 'right';
         else if (dx < 0) this.direction = 'left';
         else if (dy > 0) this.direction = 'down';
         else if (dy < 0) this.direction = 'up';
+
+        if (this.direction === prevDirection) return;
+
+        const nowHoriz = this.direction === 'left' || this.direction === 'right';
+        const wasHoriz = this.orientation === 'horizontal';
+
+        if (nowHoriz !== wasHoriz) {
+            // Swap bounding-box dimensions while keeping the car's centre in place
+            const centreX = this.x + this.width / 2;
+            const centreY = this.y + this.height / 2;
+            [this.width, this.height] = [this.height, this.width];
+            this.x = centreX - this.width / 2;
+            this.y = centreY - this.height / 2;
+            this.orientation = nowHoriz ? 'horizontal' : 'vertical';
+        }
     }
 
     update(_dt: number): void {}
@@ -128,17 +157,20 @@ export abstract class Car extends Entity {
 
         ctx.save();
 
-        const facingLeft = this.direction === 'left';
-        if (facingLeft) {
-            // Flip horizontally around the car centre
-            ctx.translate(sx + this.width, sy);
-            ctx.scale(-1, 1);
-            this.drawCarBody(ctx, 0, 0);
-            if (this.destroyed) this.drawFire(ctx, 0, 0);
-        } else {
-            this.drawCarBody(ctx, sx, sy);
-            if (this.destroyed) this.drawFire(ctx, sx, sy);
+        // Move to the car's centre in screen space, then rotate to face the current direction
+        ctx.translate(sx + this.width / 2, sy + this.height / 2);
+        switch (this.direction) {
+            case 'left': ctx.rotate(Math.PI);        break;
+            case 'down': ctx.rotate(Math.PI / 2);   break;
+            case 'up':   ctx.rotate(-Math.PI / 2);  break;
+            // 'right' needs no rotation
         }
+
+        // drawCarBody / drawFire always draw as if the car faces right, centred at origin
+        const hw = this.baseWidth / 2;
+        const hh = this.baseHeight / 2;
+        this.drawCarBody(ctx, -hw, -hh);
+        if (this.destroyed) this.drawFire(ctx, -hw, -hh);
 
         ctx.restore();
     }
@@ -171,7 +203,7 @@ export abstract class Car extends Entity {
         const flames = frame === 0 ? flamesA : flamesB;
         // Darken car body to show it is wrecked
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillRect(ox, oy, this.width, this.height);
+        ctx.fillRect(ox, oy, this.baseWidth, this.baseHeight);
         for (const [dx, dy, color] of flames) {
             ctx.fillStyle = color;
             ctx.fillRect(ox + dx, oy + dy, ps, ps);
@@ -179,17 +211,50 @@ export abstract class Car extends Entity {
     }
 
     private drawCarBody(ctx: CanvasRenderingContext2D, ox: number, oy: number): void {
+        const ps = PIXEL_SIZE;
+        const w = this.baseWidth;
+        const h = this.baseHeight;
+
+        // === Body base ===
         ctx.fillStyle = this.color;
-        ctx.fillRect(ox, oy, this.width, this.height);
-        // Wheels
-        ctx.fillStyle = '#222222';
-        ctx.fillRect(ox, oy, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
-        ctx.fillRect(ox + this.width - PIXEL_SIZE * 2, oy, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
-        ctx.fillRect(ox, oy + this.height - PIXEL_SIZE * 2, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
-        ctx.fillRect(ox + this.width - PIXEL_SIZE * 2, oy + this.height - PIXEL_SIZE * 2, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
-        // Windows
-        ctx.fillStyle = '#aaddff';
-        ctx.fillRect(ox + PIXEL_SIZE * 3, oy + PIXEL_SIZE, PIXEL_SIZE * 4, PIXEL_SIZE * 2);
-        ctx.fillRect(ox + PIXEL_SIZE * 8, oy + PIXEL_SIZE, PIXEL_SIZE * 3, PIXEL_SIZE * 2);
+        ctx.fillRect(ox, oy, w, h);
+
+        // === Roof / cabin area (semi-transparent dark overlay) ===
+        ctx.fillStyle = 'rgba(0,0,0,0.20)';
+        ctx.fillRect(ox + ps * 4, oy + ps, w - ps * 8, h - ps * 2);
+
+        // === Windshield (front glass – right edge when facing right) ===
+        ctx.fillStyle = '#c0e8ff';
+        ctx.fillRect(ox + w - ps * 5, oy + ps, ps * 2, h - ps * 2);
+
+        // === Rear window (back – left edge when facing right) ===
+        ctx.fillStyle = '#7aaabb';
+        ctx.fillRect(ox + ps * 3, oy + ps, ps * 2, h - ps * 2);
+
+        // === Wheels (dark grey, at the four corners) ===
+        ctx.fillStyle = '#111111';
+        ctx.fillRect(ox + ps,         oy,              ps * 2, ps * 2);  // rear-top
+        ctx.fillRect(ox + ps,         oy + h - ps * 2, ps * 2, ps * 2);  // rear-bottom
+        ctx.fillRect(ox + w - ps * 3, oy,              ps * 2, ps * 2);  // front-top
+        ctx.fillRect(ox + w - ps * 3, oy + h - ps * 2, ps * 2, ps * 2);  // front-bottom
+
+        // === Wheel hubcaps (lighter grey centre) ===
+        const hubOff = 2;              // inset from wheel edge
+        const hubSize = ps * 2 - 4;   // hubcap side length (wheel width minus two insets)
+        ctx.fillStyle = '#555555';
+        ctx.fillRect(ox + ps + hubOff,         oy + hubOff,              hubSize, hubSize);
+        ctx.fillRect(ox + ps + hubOff,         oy + h - ps * 2 + hubOff, hubSize, hubSize);
+        ctx.fillRect(ox + w - ps * 3 + hubOff, oy + hubOff,              hubSize, hubSize);
+        ctx.fillRect(ox + w - ps * 3 + hubOff, oy + h - ps * 2 + hubOff, hubSize, hubSize);
+
+        // === Front headlights (bright yellow, top and bottom of front edge) ===
+        ctx.fillStyle = '#ffffcc';
+        ctx.fillRect(ox + w - ps, oy,          ps, ps);
+        ctx.fillRect(ox + w - ps, oy + h - ps, ps, ps);
+
+        // === Rear taillights (red, top and bottom of rear edge) ===
+        ctx.fillStyle = '#cc1100';
+        ctx.fillRect(ox,      oy,          ps, ps);
+        ctx.fillRect(ox,      oy + h - ps, ps, ps);
     }
 }
