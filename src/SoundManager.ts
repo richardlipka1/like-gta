@@ -17,9 +17,9 @@ export class SoundManager {
     private static readonly WALK_DURATION = 0.07;
     private static readonly ENGINE_FREQ_IDLE = 55;
     private static readonly ENGINE_FREQ_MOVING = 110;
-    private static readonly ENGINE_GAIN_IDLE = 0.05;
-    private static readonly ENGINE_GAIN_MOVING = 0.09;
-    private static readonly ENGINE_GAIN_START = 0.06;
+    private static readonly ENGINE_GAIN_IDLE = 0.025;
+    private static readonly ENGINE_GAIN_MOVING = 0.045;
+    private static readonly ENGINE_GAIN_START = 0.03;
     private static readonly ENGINE_RAMP_TIME = 0.15;
 
     private getCtx(): AudioContext {

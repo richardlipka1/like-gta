@@ -15,6 +15,7 @@ import { Pedestrian } from './entities/Pedestrian';
 import { SoundManager } from './SoundManager';
 import { BloodEffect } from './entities/BloodEffect';
 import { ExplosionEffect } from './entities/ExplosionEffect';
+import { Heart } from './entities/Heart';
 
 export class Game {
     canvas: HTMLCanvasElement;
@@ -27,6 +28,7 @@ export class Game {
     bullets: Bullet[] = [];
     bloodEffects: BloodEffect[] = [];
     explosionEffects: ExplosionEffect[] = [];
+    hearts: Heart[] = [];
     running: boolean = false;
     score: number = 0;
     private renderer: Renderer;
@@ -34,6 +36,16 @@ export class Game {
     private gameOverTimer: number = 0;
     private gameOver: boolean = false;
     private sounds: SoundManager;
+    private heartSpawnTimer: number = 0;
+    private static readonly HEART_SPAWN_INTERVAL = 60;
+    private static readonly HEART_HEAL_AMOUNT = 25;
+
+    private static readonly HEART_SPAWN_POSITIONS = [
+        [10, 5], [18, 5], [26, 5],
+        [5, 10], [15, 10], [25, 10],
+        [10, 15], [18, 15],
+        [5, 20], [25, 20],
+    ];
 
     private static readonly PEDESTRIAN_DAMAGE_MULTIPLIER = 4;
     private static readonly MIN_CAR_COLLISION_DAMAGE = 5;
@@ -72,23 +84,23 @@ export class Game {
         }
 
         const beetle = new VWBeetle(12 * TILE_PX, 5 * TILE_PX);
-        beetle.npcVelocityX = 70;
+        beetle.npcVelocityX = 105;
         this.map.cars.push(beetle);
 
         const porsche = new Porsche(20 * TILE_PX, 5 * TILE_PX);
-        porsche.npcVelocityX = -90;
+        porsche.npcVelocityX = -135;
         this.map.cars.push(porsche);
 
         const van = new Van(9 * TILE_PX, 15 * TILE_PX);
-        van.npcVelocityX = 55;
+        van.npcVelocityX = 82;
         this.map.cars.push(van);
 
         const ambulance = new Ambulance(22 * TILE_PX, 15 * TILE_PX);
-        ambulance.npcVelocityX = -65;
+        ambulance.npcVelocityX = -97;
         this.map.cars.push(ambulance);
 
         const policeCar = new PoliceCar(30 * TILE_PX, 15 * TILE_PX);
-        policeCar.npcVelocityX = 80;
+        policeCar.npcVelocityX = 120;
         this.map.cars.push(policeCar);
 
         this.police.push(new Policeman(12 * TILE_PX, 12 * TILE_PX, this.player));
@@ -165,7 +177,7 @@ export class Game {
         }
 
         for (const car of this.map.cars) {
-            car.updateNpc(dt, (x, y) => this.map.isRoad(x, y));
+            car.updateNpc(dt, (x, y) => this.map.isRoad(x, y), this.map.cars);
         }
 
         for (const b of this.bullets) {
@@ -182,6 +194,26 @@ export class Game {
 
         for (const effect of this.bloodEffects) effect.update(dt);
         for (const effect of this.explosionEffects) effect.update(dt);
+        for (const heart of this.hearts) heart.update(dt);
+
+        // Spawn a heart on the map every minute
+        this.heartSpawnTimer += dt;
+        if (this.heartSpawnTimer >= Game.HEART_SPAWN_INTERVAL) {
+            this.heartSpawnTimer = 0;
+            this.spawnHeart();
+        }
+
+        // Check if player picks up a heart
+        const playerEntity = this.player.inCar ?? this.player;
+        this.hearts = this.hearts.filter(heart => {
+            if (!heart.active) return false;
+            if (this.overlaps(heart, playerEntity)) {
+                heart.active = false;
+                this.player.health = Math.min(this.player.maxHealth, this.player.health + Game.HEART_HEAL_AMOUNT);
+                return false;
+            }
+            return true;
+        });
 
         this.bullets = this.bullets.filter(b => b.active);
         this.police = this.police.filter(c => c.active);
@@ -348,8 +380,13 @@ export class Game {
         this.police.push(new Policeman(pos[0], pos[1], this.player));
     }
 
+    private spawnHeart(): void {
+        const pos = Game.HEART_SPAWN_POSITIONS[Math.floor(Math.random() * Game.HEART_SPAWN_POSITIONS.length)];
+        this.hearts.push(new Heart(pos[0] * TILE_PX, pos[1] * TILE_PX));
+    }
+
     draw(): void {
-        this.renderer.draw(this.map, this.player, this.police, this.bullets, this.bloodEffects, this.explosionEffects, this.camera, this.score);
+        this.renderer.draw(this.map, this.player, this.police, this.bullets, this.bloodEffects, this.explosionEffects, this.hearts, this.camera, this.score);
 
         if (this.gameOver) {
             const ctx = this.ctx;
@@ -376,6 +413,8 @@ export class Game {
         this.bullets = [];
         this.bloodEffects = [];
         this.explosionEffects = [];
+        this.hearts = [];
+        this.heartSpawnTimer = 0;
         this.player = new Player(10 * TILE_PX, 10 * TILE_PX);
         this.map = new GameMap();
         this.initializeEntities();
