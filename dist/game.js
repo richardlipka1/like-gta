@@ -646,6 +646,7 @@
       super();
       this.driver = null;
       this.direction = "right";
+      this.orientation = "horizontal";
       /** NPC autonomous movement velocity (px/s). Set to non-zero to enable NPC driving. */
       this.npcVelocityX = 0;
       this.npcVelocityY = 0;
@@ -659,6 +660,14 @@
       this.y = y;
       this.width = 14 * PIXEL_SIZE;
       this.height = 6 * PIXEL_SIZE;
+    }
+    /** Car's natural width when oriented horizontally (facing left/right). */
+    get baseWidth() {
+      return this.orientation === "horizontal" ? this.width : this.height;
+    }
+    /** Car's natural height when oriented horizontally (facing left/right). */
+    get baseHeight() {
+      return this.orientation === "horizontal" ? this.height : this.width;
     }
     takeDamage(amount) {
       if (this.destroyed)
@@ -742,6 +751,9 @@
       this.updateDirection(this.npcVelocityX, this.npcVelocityY);
     }
     updateDirection(dx, dy) {
+      if (dx === 0 && dy === 0)
+        return;
+      const prevDirection = this.direction;
       if (dx > 0)
         this.direction = "right";
       else if (dx < 0)
@@ -750,6 +762,18 @@
         this.direction = "down";
       else if (dy < 0)
         this.direction = "up";
+      if (this.direction === prevDirection)
+        return;
+      const nowHoriz = this.direction === "left" || this.direction === "right";
+      const wasHoriz = this.orientation === "horizontal";
+      if (nowHoriz !== wasHoriz) {
+        const centreX = this.x + this.width / 2;
+        const centreY = this.y + this.height / 2;
+        [this.width, this.height] = [this.height, this.width];
+        this.x = centreX - this.width / 2;
+        this.y = centreY - this.height / 2;
+        this.orientation = nowHoriz ? "horizontal" : "vertical";
+      }
     }
     update(_dt) {
     }
@@ -757,18 +781,23 @@
       const sx = this.x - camX;
       const sy = this.y - camY;
       ctx.save();
-      const facingLeft = this.direction === "left";
-      if (facingLeft) {
-        ctx.translate(sx + this.width, sy);
-        ctx.scale(-1, 1);
-        this.drawCarBody(ctx, 0, 0);
-        if (this.destroyed)
-          this.drawFire(ctx, 0, 0);
-      } else {
-        this.drawCarBody(ctx, sx, sy);
-        if (this.destroyed)
-          this.drawFire(ctx, sx, sy);
+      ctx.translate(sx + this.width / 2, sy + this.height / 2);
+      switch (this.direction) {
+        case "left":
+          ctx.rotate(Math.PI);
+          break;
+        case "down":
+          ctx.rotate(Math.PI / 2);
+          break;
+        case "up":
+          ctx.rotate(-Math.PI / 2);
+          break;
       }
+      const hw = this.baseWidth / 2;
+      const hh = this.baseHeight / 2;
+      this.drawCarBody(ctx, -hw, -hh);
+      if (this.destroyed)
+        this.drawFire(ctx, -hw, -hh);
       ctx.restore();
     }
     drawFire(ctx, ox, oy) {
@@ -798,23 +827,42 @@
       ];
       const flames = frame === 0 ? flamesA : flamesB;
       ctx.fillStyle = "rgba(0,0,0,0.5)";
-      ctx.fillRect(ox, oy, this.width, this.height);
+      ctx.fillRect(ox, oy, this.baseWidth, this.baseHeight);
       for (const [dx, dy, color] of flames) {
         ctx.fillStyle = color;
         ctx.fillRect(ox + dx, oy + dy, ps, ps);
       }
     }
     drawCarBody(ctx, ox, oy) {
+      const ps = PIXEL_SIZE;
+      const w = this.baseWidth;
+      const h = this.baseHeight;
       ctx.fillStyle = this.color;
-      ctx.fillRect(ox, oy, this.width, this.height);
-      ctx.fillStyle = "#222222";
-      ctx.fillRect(ox, oy, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
-      ctx.fillRect(ox + this.width - PIXEL_SIZE * 2, oy, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
-      ctx.fillRect(ox, oy + this.height - PIXEL_SIZE * 2, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
-      ctx.fillRect(ox + this.width - PIXEL_SIZE * 2, oy + this.height - PIXEL_SIZE * 2, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
-      ctx.fillStyle = "#aaddff";
-      ctx.fillRect(ox + PIXEL_SIZE * 3, oy + PIXEL_SIZE, PIXEL_SIZE * 4, PIXEL_SIZE * 2);
-      ctx.fillRect(ox + PIXEL_SIZE * 8, oy + PIXEL_SIZE, PIXEL_SIZE * 3, PIXEL_SIZE * 2);
+      ctx.fillRect(ox, oy, w, h);
+      ctx.fillStyle = "rgba(0,0,0,0.20)";
+      ctx.fillRect(ox + ps * 4, oy + ps, w - ps * 8, h - ps * 2);
+      ctx.fillStyle = "#c0e8ff";
+      ctx.fillRect(ox + w - ps * 5, oy + ps, ps * 2, h - ps * 2);
+      ctx.fillStyle = "#7aaabb";
+      ctx.fillRect(ox + ps * 3, oy + ps, ps * 2, h - ps * 2);
+      ctx.fillStyle = "#111111";
+      ctx.fillRect(ox + ps, oy, ps * 2, ps * 2);
+      ctx.fillRect(ox + ps, oy + h - ps * 2, ps * 2, ps * 2);
+      ctx.fillRect(ox + w - ps * 3, oy, ps * 2, ps * 2);
+      ctx.fillRect(ox + w - ps * 3, oy + h - ps * 2, ps * 2, ps * 2);
+      const hubOff = 2;
+      const hubSize = ps * 2 - 4;
+      ctx.fillStyle = "#555555";
+      ctx.fillRect(ox + ps + hubOff, oy + hubOff, hubSize, hubSize);
+      ctx.fillRect(ox + ps + hubOff, oy + h - ps * 2 + hubOff, hubSize, hubSize);
+      ctx.fillRect(ox + w - ps * 3 + hubOff, oy + hubOff, hubSize, hubSize);
+      ctx.fillRect(ox + w - ps * 3 + hubOff, oy + h - ps * 2 + hubOff, hubSize, hubSize);
+      ctx.fillStyle = "#ffffcc";
+      ctx.fillRect(ox + w - ps, oy, ps, ps);
+      ctx.fillRect(ox + w - ps, oy + h - ps, ps, ps);
+      ctx.fillStyle = "#cc1100";
+      ctx.fillRect(ox, oy, ps, ps);
+      ctx.fillRect(ox, oy + h - ps, ps, ps);
     }
   };
 
