@@ -397,6 +397,10 @@
     makePedSprites("#22aa22"),
     makePedSprites("#aa22aa")
   ];
+  function makeTeamPlayerSprites(team) {
+    const color = team === "blue" ? "#2255aa" : "#cc2222";
+    return makePedSprites(color);
+  }
 
   // src/entities/Player.ts
   var Player = class _Player extends Character {
@@ -408,6 +412,7 @@
       this.speed = 90;
       this.lives = 3;
       this.shootCooldown = 0;
+      this.sprites = PLAYER_SPRITES;
       this.x = x;
       this.y = y;
       this.width = 8 * PIXEL_SIZE;
@@ -471,7 +476,7 @@
     draw(ctx, camX, camY) {
       if (this.inCar)
         return;
-      const sprite = PLAYER_SPRITES[this.direction];
+      const sprite = this.sprites[this.direction];
       this.drawSprite(ctx, sprite, this.x - camX, this.y - camY);
     }
   };
@@ -1333,7 +1338,7 @@
 
   // src/Game.ts
   var Game = class _Game {
-    constructor(canvas2) {
+    constructor(canvas) {
       this.police = [];
       this.bullets = [];
       this.bloodEffects = [];
@@ -1345,8 +1350,8 @@
       this.gameOverTimer = 0;
       this.gameOver = false;
       this.heartSpawnTimer = 0;
-      this.canvas = canvas2;
-      this.ctx = canvas2.getContext("2d");
+      this.canvas = canvas;
+      this.ctx = canvas.getContext("2d");
       this.input = new InputHandler();
       this.camera = new Camera();
       this.map = new GameMap();
@@ -1722,8 +1727,494 @@
     }
   };
 
+  // src/entities/Flag.ts
+  var Flag = class extends Entity {
+    constructor(x, y) {
+      super();
+      this.heldBy = null;
+      this.x = x;
+      this.y = y;
+      this.width = 6 * PIXEL_SIZE;
+      this.height = 6 * PIXEL_SIZE;
+    }
+    draw(ctx, camX, camY) {
+      const sx = this.x - camX;
+      const sy = this.y - camY;
+      ctx.fillStyle = "#aaaaaa";
+      ctx.fillRect(sx + 8, sy, 4, 28);
+      ctx.fillStyle = "#ffdd00";
+      ctx.fillRect(sx + 12, sy, 18, 12);
+      ctx.fillStyle = "#cc5500";
+      ctx.font = "bold 10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("\u2605", sx + 21, sy + 10);
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#888888";
+      ctx.fillRect(sx + 2, sy + 26, 20, 4);
+    }
+    update(_dt) {
+    }
+  };
+
+  // src/MultiplayerGame.ts
+  var FLAG_X = 20 * TILE_PX;
+  var FLAG_Y = 15 * TILE_PX;
+  var PLAYER_DRAW_SIZE = 8 * PIXEL_SIZE;
+  var FLAG_WIN_TIME = 60;
+  var MultiplayerGame = class _MultiplayerGame {
+    // seconds before respawn
+    constructor(canvas, playerName, team, serverUrl) {
+      this.bullets = [];
+      this.bloodEffects = [];
+      this.remotePlayers = /* @__PURE__ */ new Map();
+      this.socket = null;
+      this.myId = "";
+      this.lastTime = 0;
+      this.flagTimer = 0;
+      this.gameWinner = null;
+      this.isDead = false;
+      this.deadTimer = 0;
+      this.canvas = canvas;
+      this.ctx = canvas.getContext("2d");
+      this.input = new InputHandler();
+      this.camera = new Camera();
+      this.map = new GameMap();
+      this.playerName = playerName;
+      this.team = team;
+      this.serverUrl = serverUrl;
+      const startX = team === "blue" ? 5 * TILE_PX : 35 * TILE_PX;
+      this.player = new Player(startX, 15 * TILE_PX);
+      this.player.sprites = makeTeamPlayerSprites(team);
+      this.flag = new Flag(FLAG_X, FLAG_Y);
+    }
+    static {
+      this.RESPAWN_DELAY = 3;
+    }
+    init() {
+      this.canvas.width = CANVAS_WIDTH;
+      this.canvas.height = CANVAS_HEIGHT;
+      this.map.generate();
+      this.connectToServer();
+      requestAnimationFrame((t) => this.gameLoop(t));
+    }
+    // ── Socket.io connection ──────────────────────────────────────────────────
+    connectToServer() {
+      this.socket = io(this.serverUrl);
+      this.socket.on("connect", () => {
+        this.myId = this.socket.id;
+        this.socket.emit("join", { name: this.playerName, team: this.team });
+      });
+      this.socket.on("init", (data) => {
+        for (const [id, rp] of Object.entries(data.players)) {
+          if (id !== this.myId)
+            this.remotePlayers.set(id, rp);
+        }
+        this.flag.x = data.flag.x;
+        this.flag.y = data.flag.y;
+        this.flag.heldBy = data.flag.heldBy;
+        this.flagTimer = data.flagTimer;
+      });
+      this.socket.on("playerJoined", (rp) => {
+        if (rp.id !== this.myId)
+          this.remotePlayers.set(rp.id, rp);
+      });
+      this.socket.on("playerMoved", (data) => {
+        const rp = this.remotePlayers.get(data.id);
+        if (rp) {
+          rp.x = data.x;
+          rp.y = data.y;
+          rp.direction = data.direction;
+          rp.health = data.health;
+          rp.hasFlag = data.hasFlag;
+        }
+      });
+      this.socket.on("playerLeft", (data) => {
+        this.remotePlayers.delete(data.id);
+      });
+      this.socket.on("flagPickedUp", (data) => {
+        this.flag.heldBy = data.playerId;
+      });
+      this.socket.on("flagDropped", (data) => {
+        this.flag.heldBy = null;
+        this.flag.x = data.x;
+        this.flag.y = data.y;
+      });
+      this.socket.on("flagTimer", (data) => {
+        this.flagTimer = data.time;
+      });
+      this.socket.on("teamWins", (data) => {
+        this.gameWinner = data.team;
+      });
+      this.socket.on("playerDied", (data) => {
+        const rp = this.remotePlayers.get(data.id);
+        if (rp) {
+          rp.active = false;
+          rp.hasFlag = false;
+        }
+      });
+      this.socket.on("playerRespawned", (data) => {
+        const rp = this.remotePlayers.get(data.id);
+        if (rp) {
+          rp.x = data.x;
+          rp.y = data.y;
+          rp.active = true;
+          rp.health = 100;
+        }
+      });
+      this.socket.on("bulletFired", (data) => {
+        if (data.id === this.myId)
+          return;
+        this.bullets.push(new Bullet(data.x, data.y, data.dx, data.dy, "opponent"));
+      });
+      this.socket.on("gameReset", (data) => {
+        this.gameWinner = null;
+        this.flagTimer = 0;
+        this.flag.x = data.flag.x;
+        this.flag.y = data.flag.y;
+        this.flag.heldBy = null;
+        const startX = this.team === "blue" ? 5 * TILE_PX : 35 * TILE_PX;
+        this.player.x = startX;
+        this.player.y = 15 * TILE_PX;
+        this.player.health = this.player.maxHealth;
+        this.player.active = true;
+        this.isDead = false;
+        this.deadTimer = 0;
+        for (const [id, rp] of Object.entries(data.players)) {
+          if (id !== this.myId)
+            this.remotePlayers.set(id, rp);
+        }
+      });
+    }
+    // ── Game loop ─────────────────────────────────────────────────────────────
+    gameLoop(timestamp) {
+      const dt = Math.min((timestamp - this.lastTime) / 1e3, 0.05);
+      this.lastTime = timestamp;
+      this.update(dt);
+      this.draw();
+      this.input.clearJustPressed();
+      requestAnimationFrame((t) => this.gameLoop(t));
+    }
+    update(dt) {
+      if (this.gameWinner) {
+        if (this.input.justPressed("r") || this.input.justPressed("R")) {
+          this.socket?.emit("requestRestart");
+        }
+        return;
+      }
+      if (this.isDead) {
+        this.deadTimer += dt;
+        if (this.deadTimer >= _MultiplayerGame.RESPAWN_DELAY) {
+          this.isDead = false;
+          this.deadTimer = 0;
+          const startX = this.team === "blue" ? 5 * TILE_PX : 35 * TILE_PX;
+          this.player.x = startX;
+          this.player.y = 15 * TILE_PX;
+          this.player.health = this.player.maxHealth;
+          this.player.active = true;
+          this.socket?.emit("respawn");
+        }
+        return;
+      }
+      const prevX = this.player.x;
+      const prevY = this.player.y;
+      const bulletsBefore = this.bullets.length;
+      this.player.handleInput(this.input, dt, this.bullets, () => {
+      });
+      if (this.bullets.length > bulletsBefore) {
+        const b = this.bullets[this.bullets.length - 1];
+        this.socket?.emit("shoot", { x: b.x, y: b.y, dx: b.dx, dy: b.dy });
+      }
+      this.player.update(dt);
+      this.clampToWorld(this.player);
+      this.resolvePlayerBuildingCollision();
+      if (this.player.x !== prevX || this.player.y !== prevY || this.bullets.length !== bulletsBefore) {
+        this.socket?.emit("playerUpdate", {
+          x: this.player.x,
+          y: this.player.y,
+          direction: this.player.direction,
+          health: this.player.health
+        });
+      }
+      for (const b of this.bullets) {
+        b.update(dt);
+        if (this.map.isSolid(b.x, b.y))
+          b.active = false;
+        if (b.x < 0 || b.x > WORLD_W || b.y < 0 || b.y > WORLD_H)
+          b.active = false;
+      }
+      this.checkBulletCollisions();
+      if (this.flag.heldBy === null && !this.isDead) {
+        if (this.overlaps(this.player, this.flag)) {
+          this.socket?.emit("pickupFlag");
+        }
+      }
+      for (const e of this.bloodEffects)
+        e.update(dt);
+      this.bullets = this.bullets.filter((b) => b.active);
+      this.bloodEffects = this.bloodEffects.filter((e) => e.active);
+      this.camera.follow(this.player.x, this.player.y, this.player.width, this.player.height);
+      if (!this.player.active && this.player.health <= 0 && !this.isDead) {
+        this.isDead = true;
+        this.deadTimer = 0;
+        if (this.flag.heldBy === this.myId) {
+          this.flag.heldBy = null;
+        }
+        this.socket?.emit("playerDied");
+      }
+    }
+    checkBulletCollisions() {
+      for (const bullet of this.bullets) {
+        if (!bullet.active)
+          continue;
+        if (bullet.owner === "player") {
+          for (const [id, rp] of this.remotePlayers) {
+            if (!rp.active)
+              continue;
+            if (rp.team === this.team)
+              continue;
+            const rpRect = { x: rp.x, y: rp.y, width: PLAYER_DRAW_SIZE, height: PLAYER_DRAW_SIZE };
+            if (this.overlaps(bullet, rpRect)) {
+              bullet.active = false;
+              this.bloodEffects.push(new BloodEffect(rp.x + rpRect.width / 2, rp.y + rpRect.height / 2));
+              this.socket?.emit("hitPlayer", { targetId: id, damage: bullet.damage });
+              break;
+            }
+          }
+        }
+        if (bullet.owner === "opponent") {
+          if (this.overlaps(bullet, this.player)) {
+            bullet.active = false;
+            this.player.takeDamage(bullet.damage);
+            this.bloodEffects.push(new BloodEffect(
+              this.player.x + this.player.width / 2,
+              this.player.y + this.player.height / 2
+            ));
+          }
+        }
+      }
+    }
+    resolvePlayerBuildingCollision() {
+      for (const building of this.map.buildings) {
+        if (building.collidesWith(this.player.x, this.player.y, this.player.width, this.player.height)) {
+          const b = building.getPixelBounds();
+          const overlapLeft = this.player.x + this.player.width - b.x;
+          const overlapRight = b.x + b.w - this.player.x;
+          const overlapTop = this.player.y + this.player.height - b.y;
+          const overlapBottom = b.y + b.h - this.player.y;
+          const min = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+          if (min === overlapLeft)
+            this.player.x = b.x - this.player.width;
+          else if (min === overlapRight)
+            this.player.x = b.x + b.w;
+          else if (min === overlapTop)
+            this.player.y = b.y - this.player.height;
+          else
+            this.player.y = b.y + b.h;
+        }
+      }
+    }
+    clampToWorld(entity) {
+      entity.x = Math.max(0, Math.min(entity.x, WORLD_W - entity.width));
+      entity.y = Math.max(0, Math.min(entity.y, WORLD_H - entity.height));
+    }
+    overlaps(a, b) {
+      return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+    }
+    // ── Rendering ─────────────────────────────────────────────────────────────
+    draw() {
+      const ctx = this.ctx;
+      ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      this.map.drawTiles(ctx, this.camera.x, this.camera.y);
+      for (const b of this.map.buildings)
+        b.draw(ctx, this.camera.x, this.camera.y);
+      for (const s of this.map.streets)
+        s.draw(ctx, this.camera.x, this.camera.y);
+      for (const e of this.bloodEffects)
+        e.draw(ctx, this.camera.x, this.camera.y);
+      if (this.flag.heldBy === null) {
+        this.flag.draw(ctx, this.camera.x, this.camera.y);
+      }
+      for (const [, rp] of this.remotePlayers) {
+        if (rp.active)
+          this.drawRemotePlayer(ctx, rp);
+      }
+      if (!this.isDead) {
+        this.player.draw(ctx, this.camera.x, this.camera.y);
+        if (this.flag.heldBy === this.myId) {
+          this.drawFlagOnPlayer(ctx, this.player.x, this.player.y);
+        }
+        this.drawLabel(ctx, this.playerName, this.player.x, this.player.y, this.team, true);
+      }
+      for (const b of this.bullets) {
+        if (b.active)
+          b.draw(ctx, this.camera.x, this.camera.y);
+      }
+      this.drawHUD(ctx);
+      if (this.gameWinner)
+        this.drawWinScreen(ctx);
+      if (this.isDead)
+        this.drawDeadScreen(ctx);
+    }
+    drawRemotePlayer(ctx, rp) {
+      const sx = rp.x - this.camera.x;
+      const sy = rp.y - this.camera.y;
+      const size = PLAYER_DRAW_SIZE;
+      ctx.fillStyle = rp.team === "blue" ? "#2255aa" : "#cc2222";
+      ctx.fillRect(sx, sy, size, size);
+      ctx.fillStyle = "#f5c99c";
+      ctx.fillRect(sx + 8, sy + 2, 8, 8);
+      const barW = size + 4;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(sx - 2, sy - 9, barW, 5);
+      ctx.fillStyle = rp.team === "blue" ? "#4488ff" : "#ff4444";
+      ctx.fillRect(sx - 2, sy - 9, Math.max(0, rp.health / 100 * barW), 5);
+      if (rp.hasFlag)
+        this.drawFlagOnPlayer(ctx, rp.x, rp.y);
+      this.drawLabel(ctx, rp.name, rp.x, rp.y, rp.team, false);
+    }
+    /** Draw a small flag above a player (world coords → screen via camera). */
+    drawFlagOnPlayer(ctx, wx, wy) {
+      const sx = wx - this.camera.x;
+      const sy = wy - this.camera.y;
+      ctx.fillStyle = "#aaaaaa";
+      ctx.fillRect(sx + 18, sy - 14, 3, 16);
+      ctx.fillStyle = "#ffdd00";
+      ctx.fillRect(sx + 21, sy - 14, 12, 8);
+    }
+    /** Draw player name tag in team colour. */
+    drawLabel(ctx, name, wx, wy, team, isLocal) {
+      const sx = wx - this.camera.x + PLAYER_DRAW_SIZE / 2;
+      const sy = wy - this.camera.y - 18;
+      ctx.font = isLocal ? "bold 11px monospace" : "10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillText(name, sx + 1, sy + 1);
+      ctx.fillStyle = team === "blue" ? "#88ccff" : "#ff8888";
+      ctx.fillText(name, sx, sy);
+      ctx.textAlign = "left";
+    }
+    drawHUD(ctx) {
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.fillRect(10, 10, 104, 14);
+      ctx.fillStyle = this.team === "blue" ? "#2255dd" : "#cc2222";
+      ctx.fillRect(12, 12, this.player.health / this.player.maxHealth * 100, 10);
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(10, 10, 104, 14);
+      ctx.fillStyle = "#fff";
+      ctx.font = "10px monospace";
+      ctx.fillText("HP", 14, 21);
+      ctx.fillStyle = this.team === "blue" ? "#4488ff" : "#ff4444";
+      ctx.font = "bold 13px monospace";
+      ctx.fillText(`TEAM: ${this.team.toUpperCase()}`, 10, 44);
+      if (this.flag.heldBy !== null) {
+        const isHolder = this.flag.heldBy === this.myId;
+        const holderRp = this.remotePlayers.get(this.flag.heldBy);
+        const holderName = isHolder ? this.playerName : holderRp?.name ?? "???";
+        const holderTeam = isHolder ? this.team : holderRp?.team ?? "blue";
+        const remaining = Math.max(0, FLAG_WIN_TIME - this.flagTimer);
+        ctx.fillStyle = "rgba(0,0,0,0.72)";
+        ctx.fillRect(CANVAS_WIDTH / 2 - 130, 8, 260, 44);
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#ffdd00";
+        ctx.font = "bold 12px monospace";
+        ctx.fillText(`\u{1F6A9} ${holderName} has the flag!`, CANVAS_WIDTH / 2, 26);
+        ctx.fillStyle = holderTeam === "blue" ? "#4488ff" : "#ff4444";
+        ctx.font = "12px monospace";
+        ctx.fillText(`${remaining}s until ${holderTeam.toUpperCase()} team wins`, CANVAS_WIDTH / 2, 44);
+        ctx.textAlign = "left";
+      }
+      ctx.fillStyle = "#ccc";
+      ctx.font = "11px monospace";
+      ctx.textAlign = "right";
+      ctx.fillText(`Players: ${this.remotePlayers.size + 1}`, CANVAS_WIDTH - 10, 24);
+      ctx.textAlign = "left";
+    }
+    drawWinScreen(ctx) {
+      ctx.fillStyle = "rgba(0,0,0,0.72)";
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      const isMyTeam = this.gameWinner === this.team;
+      ctx.fillStyle = isMyTeam ? "#ffdd00" : "#ff4444";
+      ctx.font = "bold 48px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(
+        isMyTeam ? "YOUR TEAM WINS! \u{1F389}" : `${(this.gameWinner ?? "").toUpperCase()} TEAM WINS!`,
+        CANVAS_WIDTH / 2,
+        CANVAS_HEIGHT / 2 - 20
+      );
+      ctx.fillStyle = "#fff";
+      ctx.font = "20px monospace";
+      ctx.fillText("Press R to play again", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 40);
+      ctx.textAlign = "left";
+    }
+    drawDeadScreen(ctx) {
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      ctx.fillStyle = "#ff2222";
+      ctx.font = "bold 40px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("YOU DIED", CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+      const respawnIn = Math.ceil(_MultiplayerGame.RESPAWN_DELAY - this.deadTimer);
+      ctx.fillStyle = "#fff";
+      ctx.font = "18px monospace";
+      ctx.fillText(`Respawning in ${respawnIn}s\u2026`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 40);
+      ctx.textAlign = "left";
+    }
+  };
+
   // src/main.ts
-  var canvas = document.getElementById("gameCanvas");
-  var game = new Game(canvas);
-  game.init();
+  function show(id) {
+    document.getElementById(id).style.display = "";
+  }
+  function hide(id) {
+    document.getElementById(id).style.display = "none";
+  }
+  function val(id) {
+    return document.getElementById(id).value.trim();
+  }
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error(`Failed to load ${src}`));
+      document.head.appendChild(s);
+    });
+  }
+  document.getElementById("singleBtn").addEventListener("click", () => {
+    hide("modeSelect");
+    show("overlay");
+    show("gameCanvas");
+    const canvas = document.getElementById("gameCanvas");
+    const game = new Game(canvas);
+    game.init();
+  });
+  document.getElementById("multiBtn").addEventListener("click", () => {
+    hide("modeSelect");
+    show("multiLobby");
+  });
+  document.getElementById("lobbyBack").addEventListener("click", () => {
+    hide("multiLobby");
+    show("modeSelect");
+  });
+  document.getElementById("joinBtn").addEventListener("click", async () => {
+    const name = val("playerName") || "Player";
+    const team = document.getElementById("teamColor").value;
+    const serverUrl = val("serverUrl") || "http://localhost:3000";
+    const errEl = document.getElementById("lobbyError");
+    errEl.textContent = "Connecting\u2026";
+    try {
+      await loadScript(`${serverUrl}/socket.io/socket.io.js`);
+    } catch {
+      errEl.textContent = `Could not reach server at ${serverUrl}. Make sure "npm start" is running.`;
+      return;
+    }
+    errEl.textContent = "";
+    hide("multiLobby");
+    hide("overlay");
+    show("gameCanvas");
+    const canvas = document.getElementById("gameCanvas");
+    const game = new MultiplayerGame(canvas, name, team, serverUrl);
+    game.init();
+  });
 })();

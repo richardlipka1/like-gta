@@ -4,19 +4,136 @@
   <meta charset="UTF-8">
   <title>Like GTA</title>
   <style>
-    body { margin: 0; background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #111;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: monospace;
+      color: #fff;
+    }
+
     canvas { display: block; image-rendering: pixelated; }
-    #overlay { position: absolute; top: 10px; right: 10px; color: #fff; font-family: monospace; font-size: 12px; background: rgba(0,0,0,0.6); padding: 8px 12px; border-radius: 4px; }
+
+    /* ── Shared overlay panel ──────────────────────────────────────────── */
+    .panel {
+      position: absolute;
+      background: rgba(0,0,0,0.88);
+      border: 2px solid #555;
+      border-radius: 10px;
+      padding: 36px 48px;
+      text-align: center;
+      min-width: 340px;
+    }
+    .panel h1 { font-size: 2.4rem; margin-bottom: 6px; color: #ffdd00; letter-spacing: 3px; }
+    .panel h2 { font-size: 1.4rem; margin-bottom: 20px; color: #aaa; }
+    .panel p  { color: #888; font-size: 0.8rem; margin-top: 16px; }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 12px 0;
+      margin: 10px 0;
+      font-size: 1.1rem;
+      font-family: monospace;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: filter 0.15s;
+    }
+    .btn:hover { filter: brightness(1.2); }
+    .btn-single { background: #2255aa; color: #fff; }
+    .btn-multi  { background: #aa2222; color: #fff; }
+    .btn-join   { background: #22aa44; color: #fff; }
+    .btn-back   { background: #333; color: #aaa; font-size: 0.9rem; padding: 8px 0; }
+
+    /* ── Lobby form ────────────────────────────────────────────────────── */
+    .field { margin: 10px 0; text-align: left; }
+    .field label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 4px; }
+    .field input, .field select {
+      width: 100%;
+      padding: 8px 10px;
+      background: #222;
+      border: 1px solid #555;
+      border-radius: 5px;
+      color: #fff;
+      font-family: monospace;
+      font-size: 0.95rem;
+    }
+    .field select option { background: #222; }
+    #lobbyError { color: #ff6666; font-size: 0.8rem; min-height: 1.2em; margin-top: 6px; }
+
+    /* ── In-game HUD hint ──────────────────────────────────────────────── */
+    #overlay {
+      position: absolute;
+      top: 10px; right: 10px;
+      color: #fff;
+      font-size: 11px;
+      background: rgba(0,0,0,0.6);
+      padding: 8px 12px;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
-  <canvas id="gameCanvas"></canvas>
-  <div id="overlay">
-    WASD / Arrows: Move<br>
-    E: Enter/Exit Car<br>
-    Space: Shoot<br>
-    R: Restart (if dead)
+
+  <!-- ── Mode selection ──────────────────────────────────────────────────── -->
+  <div id="modeSelect" class="panel">
+    <h1>LIKE GTA</h1>
+    <h2>Choose your mode</h2>
+    <button id="singleBtn" class="btn btn-single">🎮 Single Player</button>
+    <button id="multiBtn"  class="btn btn-multi">🌐 Multiplayer</button>
+    <p>Single player: explore, drive, fight cops.<br>
+       Multiplayer: capture the flag — hold it 60 s to win!</p>
   </div>
+
+  <!-- ── Multiplayer lobby ───────────────────────────────────────────────── -->
+  <div id="multiLobby" class="panel" style="display:none">
+    <h1>MULTIPLAYER</h1>
+    <h2>Capture the Flag</h2>
+
+    <div class="field">
+      <label>Your name</label>
+      <input id="playerName" type="text" maxlength="20" placeholder="Player" />
+    </div>
+
+    <div class="field">
+      <label>Team</label>
+      <select id="teamColor">
+        <option value="blue">🔵 Blue — spawns on the LEFT</option>
+        <option value="red">🔴 Red — spawns on the RIGHT</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Server URL</label>
+      <input id="serverUrl" type="text" value="http://localhost:3000" />
+    </div>
+
+    <div id="lobbyError"></div>
+
+    <button id="joinBtn"  class="btn btn-join">Join Game</button>
+    <button id="lobbyBack" class="btn btn-back">← Back</button>
+
+    <p>Run <code>npm start</code> to start the server before joining.</p>
+  </div>
+
+  <!-- ── Game canvas (hidden until a mode is started) ───────────────────── -->
+  <canvas id="gameCanvas" style="display:none"></canvas>
+
+  <!-- ── In-game controls hint ──────────────────────────────────────────── -->
+  <div id="overlay" style="display:none">
+    WASD / Arrows: Move<br>
+    E: Enter/Exit Car (single player)<br>
+    Space: Shoot<br>
+    R: Restart (if dead / game over)
+  </div>
+
   <script src="dist/game.js"></script>
 </body>
 </html>
+

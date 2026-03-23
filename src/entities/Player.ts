@@ -11,6 +11,7 @@ export class Player extends Character {
     speed: number = 90;
     lives: number = 3;
     shootCooldown: number = 0;
+    sprites: Record<string, (string | null)[][]> = PLAYER_SPRITES;
 
     private static readonly SHOOT_COOLDOWN = 0.3; // seconds between shots
 
@@ -60,7 +61,7 @@ export class Player extends Character {
 
     draw(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
         if (this.inCar) return;
-        const sprite = PLAYER_SPRITES[this.direction];
+        const sprite = this.sprites[this.direction];
         this.drawSprite(ctx, sprite, this.x - camX, this.y - camY);
     }
 }

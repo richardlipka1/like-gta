@@ -3,10 +3,15 @@
   "version": "1.0.0",
   "scripts": {
     "build": "esbuild src/main.ts --bundle --outfile=dist/game.js",
-    "dev": "esbuild src/main.ts --bundle --outfile=dist/game.js --watch"
+    "dev": "esbuild src/main.ts --bundle --outfile=dist/game.js --watch",
+    "start": "node server.js"
   },
   "devDependencies": {
     "esbuild": "^0.20.0",
     "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
   }
 }
