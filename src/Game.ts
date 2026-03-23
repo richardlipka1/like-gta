@@ -13,6 +13,8 @@ import { Van } from './entities/vehicles/Van';
 import { Ambulance } from './entities/vehicles/Ambulance';
 import { Pedestrian } from './entities/Pedestrian';
 import { SoundManager } from './SoundManager';
+import { BloodEffect } from './entities/BloodEffect';
+import { ExplosionEffect } from './entities/ExplosionEffect';
 
 export class Game {
     canvas: HTMLCanvasElement;
@@ -23,6 +25,8 @@ export class Game {
     player: Player;
     police: Policeman[] = [];
     bullets: Bullet[] = [];
+    bloodEffects: BloodEffect[] = [];
+    explosionEffects: ExplosionEffect[] = [];
     running: boolean = false;
     score: number = 0;
     private renderer: Renderer;
@@ -30,6 +34,10 @@ export class Game {
     private gameOverTimer: number = 0;
     private gameOver: boolean = false;
     private sounds: SoundManager;
+
+    private static readonly PEDESTRIAN_DAMAGE_MULTIPLIER = 4;
+    private static readonly MIN_CAR_COLLISION_DAMAGE = 5;
+    private static readonly CAR_SPEED_DAMAGE_DIVISOR = 10;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -168,8 +176,17 @@ export class Game {
 
         this.checkCollisions();
 
+        if (!this.player.inCar) {
+            this.checkCarPlayerCollision();
+        }
+
+        for (const effect of this.bloodEffects) effect.update(dt);
+        for (const effect of this.explosionEffects) effect.update(dt);
+
         this.bullets = this.bullets.filter(b => b.active);
         this.police = this.police.filter(c => c.active);
+        this.bloodEffects = this.bloodEffects.filter(e => e.active);
+        this.explosionEffects = this.explosionEffects.filter(e => e.active);
 
         if (this.player.starLevel > 0 && this.police.length < this.player.starLevel * 2) {
             this.spawnPolice();
@@ -241,9 +258,38 @@ export class Game {
                     if (this.overlaps(bullet, cop)) {
                         cop.takeDamage(bullet.damage);
                         bullet.active = false;
+                        this.bloodEffects.push(new BloodEffect(cop.x + cop.width / 2, cop.y + cop.height / 2));
                         this.score += 100;
                         break;
                     }
+                }
+                if (!bullet.active) continue;
+
+                for (const ped of this.map.pedestrians) {
+                    if (!ped.active) continue;
+                    if (this.overlaps(bullet, ped)) {
+                        ped.takeDamage(bullet.damage * Game.PEDESTRIAN_DAMAGE_MULTIPLIER);
+                        bullet.active = false;
+                        this.bloodEffects.push(new BloodEffect(ped.x + ped.width / 2, ped.y + ped.height / 2));
+                        this.score += 50;
+                        break;
+                    }
+                }
+                if (!bullet.active) continue;
+
+                for (const car of this.map.cars) {
+                    if (!this.overlaps(bullet, car)) continue;
+                    const wasDestroyed = car.destroyed;
+                    car.takeDamage(bullet.damage);
+                    bullet.active = false;
+                    if (!wasDestroyed && car.destroyed) {
+                        this.explosionEffects.push(new ExplosionEffect(
+                            car.x + car.width / 2, car.y + car.height / 2
+                        ));
+                        this.sounds.playExplosion();
+                        this.score += 500;
+                    }
+                    break;
                 }
             }
             if (bullet.owner === 'police') {
@@ -253,6 +299,34 @@ export class Game {
                     if (this.player.starLevel < 5) this.player.starLevel++;
                 }
             }
+        }
+    }
+
+    private checkCarPlayerCollision(): void {
+        for (const car of this.map.cars) {
+            if (car.destroyed) continue;
+            if (car.hitCooldown > 0) continue;
+            if (!this.overlaps(car, this.player)) continue;
+
+            // Only moving NPC cars deal damage
+            const isMoving = car.npcVelocityX !== 0 || car.npcVelocityY !== 0;
+            if (isMoving) {
+                const damage = Math.max(Game.MIN_CAR_COLLISION_DAMAGE, Math.floor(car.carSpeed / Game.CAR_SPEED_DAMAGE_DIVISOR));
+                this.player.takeDamage(damage);
+                if (this.player.starLevel < 5) this.player.starLevel++;
+            }
+            car.hitCooldown = 1;
+
+            // Push player away from the car
+            const overlapLeft = (this.player.x + this.player.width) - car.x;
+            const overlapRight = (car.x + car.width) - this.player.x;
+            const overlapTop = (this.player.y + this.player.height) - car.y;
+            const overlapBottom = (car.y + car.height) - this.player.y;
+            const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+            if (minOverlap === overlapLeft) this.player.x = car.x - this.player.width;
+            else if (minOverlap === overlapRight) this.player.x = car.x + car.width;
+            else if (minOverlap === overlapTop) this.player.y = car.y - this.player.height;
+            else this.player.y = car.y + car.height;
         }
     }
 
@@ -275,7 +349,7 @@ export class Game {
     }
 
     draw(): void {
-        this.renderer.draw(this.map, this.player, this.police, this.bullets, this.camera, this.score);
+        this.renderer.draw(this.map, this.player, this.police, this.bullets, this.bloodEffects, this.explosionEffects, this.camera, this.score);
 
         if (this.gameOver) {
             const ctx = this.ctx;
@@ -300,6 +374,8 @@ export class Game {
         this.gameOverTimer = 0;
         this.police = [];
         this.bullets = [];
+        this.bloodEffects = [];
+        this.explosionEffects = [];
         this.player = new Player(10 * TILE_PX, 10 * TILE_PX);
         this.map = new GameMap();
         this.initializeEntities();

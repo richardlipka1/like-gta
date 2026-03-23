@@ -578,7 +578,7 @@
     constructor(ctx) {
       this.ctx = ctx;
     }
-    draw(map, player, police, bullets, camera, score) {
+    draw(map, player, police, bullets, bloodEffects, explosionEffects, camera, score) {
       const ctx = this.ctx;
       ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       map.drawTiles(ctx, camera.x, camera.y);
@@ -587,6 +587,9 @@
       }
       for (const s of map.streets) {
         s.draw(ctx, camera.x, camera.y);
+      }
+      for (const effect of bloodEffects) {
+        effect.draw(ctx, camera.x, camera.y);
       }
       for (const car of map.cars) {
         if (car.active)
@@ -604,6 +607,9 @@
       for (const b of bullets) {
         if (b.active)
           b.draw(ctx, camera.x, camera.y);
+      }
+      for (const effect of explosionEffects) {
+        effect.draw(ctx, camera.x, camera.y);
       }
       this.drawUI(player, score);
     }
@@ -643,12 +649,30 @@
       /** NPC autonomous movement velocity (px/s). Set to non-zero to enable NPC driving. */
       this.npcVelocityX = 0;
       this.npcVelocityY = 0;
+      this.health = 100;
+      this.maxHealth = 100;
+      this.destroyed = false;
+      /** Cooldown (seconds) before the car can damage the player again after a collision. */
+      this.hitCooldown = 0;
+      this.fireAnimTimer = 0;
       this.x = x;
       this.y = y;
       this.width = 14 * PIXEL_SIZE;
       this.height = 6 * PIXEL_SIZE;
     }
+    takeDamage(amount) {
+      if (this.destroyed)
+        return;
+      this.health = Math.max(0, this.health - amount);
+      if (this.health <= 0) {
+        this.destroyed = true;
+        this.npcVelocityX = 0;
+        this.npcVelocityY = 0;
+      }
+    }
     canEnter(character) {
+      if (this.destroyed)
+        return false;
       const cx = character.x + character.width / 2;
       const cy = character.y + character.height / 2;
       const mx = this.x + this.width / 2;
@@ -695,6 +719,12 @@
     }
     /** Autonomous NPC driving — moves the car when no player is driving. */
     updateNpc(dt, isRoad) {
+      if (this.hitCooldown > 0)
+        this.hitCooldown -= dt;
+      if (this.destroyed) {
+        this.fireAnimTimer += dt;
+        return;
+      }
       if (this.driver || this.npcVelocityX === 0 && this.npcVelocityY === 0)
         return;
       const nextX = this.x + this.npcVelocityX * dt;
@@ -732,10 +762,47 @@
         ctx.translate(sx + this.width, sy);
         ctx.scale(-1, 1);
         this.drawCarBody(ctx, 0, 0);
+        if (this.destroyed)
+          this.drawFire(ctx, 0, 0);
       } else {
         this.drawCarBody(ctx, sx, sy);
+        if (this.destroyed)
+          this.drawFire(ctx, sx, sy);
       }
       ctx.restore();
+    }
+    drawFire(ctx, ox, oy) {
+      const ps = PIXEL_SIZE;
+      const frame = Math.floor(this.fireAnimTimer * 8) % 2;
+      const flamesA = [
+        [ps * 1, -ps * 2, "#ff6600"],
+        [ps * 3, -ps * 3, "#ffaa00"],
+        [ps * 5, -ps * 2, "#ff2200"],
+        [ps * 7, -ps * 3, "#ff6600"],
+        [ps * 9, -ps * 2, "#ffaa00"],
+        [ps * 11, -ps * 1, "#ff2200"],
+        [ps * 2, -ps, "#ffff00"],
+        [ps * 6, -ps * 2, "#ffaa00"],
+        [ps * 10, -ps, "#ff6600"]
+      ];
+      const flamesB = [
+        [ps * 2, -ps * 2, "#ffaa00"],
+        [ps * 4, -ps * 3, "#ff2200"],
+        [ps * 6, -ps * 2, "#ff6600"],
+        [ps * 8, -ps * 3, "#ffaa00"],
+        [ps * 10, -ps * 2, "#ff2200"],
+        [ps * 12, -ps * 1, "#ff6600"],
+        [ps * 1, -ps, "#ffff00"],
+        [ps * 5, -ps * 2, "#ff2200"],
+        [ps * 9, -ps, "#ffaa00"]
+      ];
+      const flames = frame === 0 ? flamesA : flamesB;
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.fillRect(ox, oy, this.width, this.height);
+      for (const [dx, dy, color] of flames) {
+        ctx.fillStyle = color;
+        ctx.fillRect(ox + dx, oy + dy, ps, ps);
+      }
     }
     drawCarBody(ctx, ox, oy) {
       ctx.fillStyle = this.color;
@@ -994,6 +1061,112 @@
       this.engineOsc = null;
       this.engineGain = null;
     }
+    playExplosion() {
+      const ctx = this.getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(120, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(25, ctx.currentTime + 0.6);
+      gain.gain.setValueAtTime(0.4, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + 0.6);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.6);
+    }
+  };
+
+  // src/entities/BloodEffect.ts
+  var BloodEffect = class _BloodEffect {
+    constructor(x, y) {
+      this.lifetime = _BloodEffect.MAX_LIFETIME;
+      this.x = x;
+      this.y = y;
+    }
+    static {
+      this.MAX_LIFETIME = 2;
+    }
+    static {
+      this.PIXELS = [
+        [0, 0],
+        [-PIXEL_SIZE, -PIXEL_SIZE],
+        [PIXEL_SIZE, -PIXEL_SIZE],
+        [-PIXEL_SIZE * 2, 0],
+        [PIXEL_SIZE * 2, 0],
+        [0, -PIXEL_SIZE * 2],
+        [0, PIXEL_SIZE * 2],
+        [-PIXEL_SIZE, PIXEL_SIZE],
+        [PIXEL_SIZE, PIXEL_SIZE],
+        [-PIXEL_SIZE * 2, -PIXEL_SIZE],
+        [PIXEL_SIZE * 2, -PIXEL_SIZE],
+        [-PIXEL_SIZE, -PIXEL_SIZE * 2],
+        [PIXEL_SIZE, -PIXEL_SIZE * 2]
+      ];
+    }
+    update(dt) {
+      this.lifetime -= dt;
+    }
+    get active() {
+      return this.lifetime > 0;
+    }
+    draw(ctx, camX, camY) {
+      const alpha = Math.max(0, this.lifetime / _BloodEffect.MAX_LIFETIME);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = "#cc0000";
+      const sx = this.x - camX;
+      const sy = this.y - camY;
+      for (const [dx, dy] of _BloodEffect.PIXELS) {
+        ctx.fillRect(sx + dx, sy + dy, PIXEL_SIZE, PIXEL_SIZE);
+      }
+      ctx.globalAlpha = 1;
+    }
+  };
+
+  // src/entities/ExplosionEffect.ts
+  var ExplosionEffect = class _ExplosionEffect {
+    constructor(x, y) {
+      this.lifetime = _ExplosionEffect.MAX_LIFETIME;
+      this.x = x;
+      this.y = y;
+    }
+    static {
+      this.MAX_LIFETIME = 0.7;
+    }
+    static {
+      this.ANGLES = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
+    }
+    static {
+      this.RING_COLORS = ["#ff6600", "#ffaa00", "#ff2200", "#ffff00"];
+    }
+    update(dt) {
+      this.lifetime -= dt;
+    }
+    get active() {
+      return this.lifetime > 0;
+    }
+    draw(ctx, camX, camY) {
+      const progress = 1 - this.lifetime / _ExplosionEffect.MAX_LIFETIME;
+      const alpha = Math.max(0, this.lifetime / _ExplosionEffect.MAX_LIFETIME);
+      ctx.globalAlpha = alpha;
+      const sx = Math.round(this.x - camX);
+      const sy = Math.round(this.y - camY);
+      const ps = PIXEL_SIZE;
+      const radius = Math.round(progress * 48);
+      for (let i = 0; i < _ExplosionEffect.ANGLES.length; i++) {
+        const rad = _ExplosionEffect.ANGLES[i] * Math.PI / 180;
+        const px = Math.round(Math.cos(rad) * radius);
+        const py = Math.round(Math.sin(rad) * radius);
+        ctx.fillStyle = _ExplosionEffect.RING_COLORS[i % _ExplosionEffect.RING_COLORS.length];
+        ctx.fillRect(sx + px - ps / 2, sy + py - ps / 2, ps, ps);
+      }
+      if (progress < 0.35) {
+        const flashSize = Math.round((0.35 - progress) / 0.35 * 24);
+        ctx.fillStyle = "#ffff88";
+        ctx.fillRect(sx - flashSize / 2, sy - flashSize / 2, flashSize, flashSize);
+      }
+      ctx.globalAlpha = 1;
+    }
   };
 
   // src/Game.ts
@@ -1001,6 +1174,8 @@
     constructor(canvas2) {
       this.police = [];
       this.bullets = [];
+      this.bloodEffects = [];
+      this.explosionEffects = [];
       this.running = false;
       this.score = 0;
       this.lastTime = 0;
@@ -1014,6 +1189,15 @@
       this.player = new Player(10 * TILE_PX, 10 * TILE_PX);
       this.renderer = new Renderer(this.ctx);
       this.sounds = new SoundManager();
+    }
+    static {
+      this.PEDESTRIAN_DAMAGE_MULTIPLIER = 4;
+    }
+    static {
+      this.MIN_CAR_COLLISION_DAMAGE = 5;
+    }
+    static {
+      this.CAR_SPEED_DAMAGE_DIVISOR = 10;
     }
     init() {
       this.canvas.width = CANVAS_WIDTH;
@@ -1126,8 +1310,17 @@
           b.active = false;
       }
       this.checkCollisions();
+      if (!this.player.inCar) {
+        this.checkCarPlayerCollision();
+      }
+      for (const effect of this.bloodEffects)
+        effect.update(dt);
+      for (const effect of this.explosionEffects)
+        effect.update(dt);
       this.bullets = this.bullets.filter((b) => b.active);
       this.police = this.police.filter((c) => c.active);
+      this.bloodEffects = this.bloodEffects.filter((e) => e.active);
+      this.explosionEffects = this.explosionEffects.filter((e) => e.active);
       if (this.player.starLevel > 0 && this.police.length < this.player.starLevel * 2) {
         this.spawnPolice();
       }
@@ -1198,9 +1391,41 @@
             if (this.overlaps(bullet, cop)) {
               cop.takeDamage(bullet.damage);
               bullet.active = false;
+              this.bloodEffects.push(new BloodEffect(cop.x + cop.width / 2, cop.y + cop.height / 2));
               this.score += 100;
               break;
             }
+          }
+          if (!bullet.active)
+            continue;
+          for (const ped of this.map.pedestrians) {
+            if (!ped.active)
+              continue;
+            if (this.overlaps(bullet, ped)) {
+              ped.takeDamage(bullet.damage * _Game.PEDESTRIAN_DAMAGE_MULTIPLIER);
+              bullet.active = false;
+              this.bloodEffects.push(new BloodEffect(ped.x + ped.width / 2, ped.y + ped.height / 2));
+              this.score += 50;
+              break;
+            }
+          }
+          if (!bullet.active)
+            continue;
+          for (const car of this.map.cars) {
+            if (!this.overlaps(bullet, car))
+              continue;
+            const wasDestroyed = car.destroyed;
+            car.takeDamage(bullet.damage);
+            bullet.active = false;
+            if (!wasDestroyed && car.destroyed) {
+              this.explosionEffects.push(new ExplosionEffect(
+                car.x + car.width / 2,
+                car.y + car.height / 2
+              ));
+              this.sounds.playExplosion();
+              this.score += 500;
+            }
+            break;
           }
         }
         if (bullet.owner === "police") {
@@ -1211,6 +1436,37 @@
               this.player.starLevel++;
           }
         }
+      }
+    }
+    checkCarPlayerCollision() {
+      for (const car of this.map.cars) {
+        if (car.destroyed)
+          continue;
+        if (car.hitCooldown > 0)
+          continue;
+        if (!this.overlaps(car, this.player))
+          continue;
+        const isMoving = car.npcVelocityX !== 0 || car.npcVelocityY !== 0;
+        if (isMoving) {
+          const damage = Math.max(_Game.MIN_CAR_COLLISION_DAMAGE, Math.floor(car.carSpeed / _Game.CAR_SPEED_DAMAGE_DIVISOR));
+          this.player.takeDamage(damage);
+          if (this.player.starLevel < 5)
+            this.player.starLevel++;
+        }
+        car.hitCooldown = 1;
+        const overlapLeft = this.player.x + this.player.width - car.x;
+        const overlapRight = car.x + car.width - this.player.x;
+        const overlapTop = this.player.y + this.player.height - car.y;
+        const overlapBottom = car.y + car.height - this.player.y;
+        const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+        if (minOverlap === overlapLeft)
+          this.player.x = car.x - this.player.width;
+        else if (minOverlap === overlapRight)
+          this.player.x = car.x + car.width;
+        else if (minOverlap === overlapTop)
+          this.player.y = car.y - this.player.height;
+        else
+          this.player.y = car.y + car.height;
       }
     }
     overlaps(a, b) {
@@ -1227,7 +1483,7 @@
       this.police.push(new Policeman(pos[0], pos[1], this.player));
     }
     draw() {
-      this.renderer.draw(this.map, this.player, this.police, this.bullets, this.camera, this.score);
+      this.renderer.draw(this.map, this.player, this.police, this.bullets, this.bloodEffects, this.explosionEffects, this.camera, this.score);
       if (this.gameOver) {
         const ctx = this.ctx;
         ctx.fillStyle = "rgba(0,0,0,0.7)";
@@ -1250,6 +1506,8 @@
       this.gameOverTimer = 0;
       this.police = [];
       this.bullets = [];
+      this.bloodEffects = [];
+      this.explosionEffects = [];
       this.player = new Player(10 * TILE_PX, 10 * TILE_PX);
       this.map = new GameMap();
       this.initializeEntities();
