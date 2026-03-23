@@ -13,6 +13,15 @@ export abstract class Car extends Entity {
     npcVelocityX: number = 0;
     npcVelocityY: number = 0;
 
+    health: number = 100;
+    maxHealth: number = 100;
+    destroyed: boolean = false;
+
+    /** Cooldown (seconds) before the car can damage the player again after a collision. */
+    hitCooldown: number = 0;
+
+    private fireAnimTimer: number = 0;
+
     constructor(x: number, y: number) {
         super();
         this.x = x;
@@ -21,7 +30,18 @@ export abstract class Car extends Entity {
         this.height = 6 * PIXEL_SIZE;
     }
 
+    takeDamage(amount: number): void {
+        if (this.destroyed) return;
+        this.health = Math.max(0, this.health - amount);
+        if (this.health <= 0) {
+            this.destroyed = true;
+            this.npcVelocityX = 0;
+            this.npcVelocityY = 0;
+        }
+    }
+
     canEnter(character: Character): boolean {
+        if (this.destroyed) return false;
         const cx = character.x + character.width / 2;
         const cy = character.y + character.height / 2;
         const mx = this.x + this.width / 2;
@@ -63,6 +83,13 @@ export abstract class Car extends Entity {
 
     /** Autonomous NPC driving — moves the car when no player is driving. */
     updateNpc(dt: number, isRoad: (x: number, y: number) => boolean): void {
+        if (this.hitCooldown > 0) this.hitCooldown -= dt;
+
+        if (this.destroyed) {
+            this.fireAnimTimer += dt;
+            return;
+        }
+
         if (this.driver || (this.npcVelocityX === 0 && this.npcVelocityY === 0)) return;
 
         const nextX = this.x + this.npcVelocityX * dt;
@@ -107,11 +134,48 @@ export abstract class Car extends Entity {
             ctx.translate(sx + this.width, sy);
             ctx.scale(-1, 1);
             this.drawCarBody(ctx, 0, 0);
+            if (this.destroyed) this.drawFire(ctx, 0, 0);
         } else {
             this.drawCarBody(ctx, sx, sy);
+            if (this.destroyed) this.drawFire(ctx, sx, sy);
         }
 
         ctx.restore();
+    }
+
+    private drawFire(ctx: CanvasRenderingContext2D, ox: number, oy: number): void {
+        const ps = PIXEL_SIZE;
+        const frame = Math.floor(this.fireAnimTimer * 8) % 2;
+        const flamesA: [number, number, string][] = [
+            [ps * 1, -ps * 2, '#ff6600'],
+            [ps * 3, -ps * 3, '#ffaa00'],
+            [ps * 5, -ps * 2, '#ff2200'],
+            [ps * 7, -ps * 3, '#ff6600'],
+            [ps * 9, -ps * 2, '#ffaa00'],
+            [ps * 11, -ps * 1, '#ff2200'],
+            [ps * 2, -ps, '#ffff00'],
+            [ps * 6, -ps * 2, '#ffaa00'],
+            [ps * 10, -ps, '#ff6600'],
+        ];
+        const flamesB: [number, number, string][] = [
+            [ps * 2, -ps * 2, '#ffaa00'],
+            [ps * 4, -ps * 3, '#ff2200'],
+            [ps * 6, -ps * 2, '#ff6600'],
+            [ps * 8, -ps * 3, '#ffaa00'],
+            [ps * 10, -ps * 2, '#ff2200'],
+            [ps * 12, -ps * 1, '#ff6600'],
+            [ps * 1, -ps, '#ffff00'],
+            [ps * 5, -ps * 2, '#ff2200'],
+            [ps * 9, -ps, '#ffaa00'],
+        ];
+        const flames = frame === 0 ? flamesA : flamesB;
+        // Darken car body to show it is wrecked
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(ox, oy, this.width, this.height);
+        for (const [dx, dy, color] of flames) {
+            ctx.fillStyle = color;
+            ctx.fillRect(ox + dx, oy + dy, ps, ps);
+        }
     }
 
     private drawCarBody(ctx: CanvasRenderingContext2D, ox: number, oy: number): void {

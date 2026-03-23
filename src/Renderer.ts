@@ -3,6 +3,8 @@ import { Player } from './entities/Player';
 import { Policeman } from './entities/Policeman';
 import { Bullet } from './entities/Bullet';
 import { Camera } from './Camera';
+import { BloodEffect } from './entities/BloodEffect';
+import { ExplosionEffect } from './entities/ExplosionEffect';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from './constants';
 
 export class Renderer {
@@ -17,6 +19,8 @@ export class Renderer {
         player: Player,
         police: Policeman[],
         bullets: Bullet[],
+        bloodEffects: BloodEffect[],
+        explosionEffects: ExplosionEffect[],
         camera: Camera,
         score: number
     ): void {
@@ -31,6 +35,10 @@ export class Renderer {
 
         for (const s of map.streets) {
             s.draw(ctx, camera.x, camera.y);
+        }
+
+        for (const effect of bloodEffects) {
+            effect.draw(ctx, camera.x, camera.y);
         }
 
         for (const car of map.cars) {
@@ -49,6 +57,10 @@ export class Renderer {
 
         for (const b of bullets) {
             if (b.active) b.draw(ctx, camera.x, camera.y);
+        }
+
+        for (const effect of explosionEffects) {
+            effect.draw(ctx, camera.x, camera.y);
         }
 
         this.drawUI(player, score);
