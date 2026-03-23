@@ -66,3 +66,9 @@ export const PEDESTRIAN_SPRITES: Record<string, (string | null)[][]>[] = [
     makePedSprites('#22aa22'),
     makePedSprites('#aa22aa'),
 ];
+
+/** Returns player sprites tinted for a given team colour ('blue' | 'red'). */
+export function makeTeamPlayerSprites(team: 'blue' | 'red'): Record<string, (string | null)[][]> {
+    const color = team === 'blue' ? '#2255aa' : '#cc2222';
+    return makePedSprites(color);
+}

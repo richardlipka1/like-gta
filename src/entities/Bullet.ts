@@ -5,10 +5,10 @@ export class Bullet extends Entity {
     dx: number;
     dy: number;
     speed: number = 300;
-    owner: 'player' | 'police';
+    owner: 'player' | 'police' | 'opponent';
     damage: number = 25;
 
-    constructor(x: number, y: number, dx: number, dy: number, owner: 'player' | 'police') {
+    constructor(x: number, y: number, dx: number, dy: number, owner: 'player' | 'police' | 'opponent') {
         super();
         this.x = x;
         this.y = y;
