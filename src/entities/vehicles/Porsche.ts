@@ -2,7 +2,7 @@ import { Car } from './Car';
 
 export class Porsche extends Car {
     color = '#cc2222';
-    carSpeed = 160;
+    carSpeed = 240;
 
     constructor(x: number, y: number) {
         super(x, y);

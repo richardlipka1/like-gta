@@ -578,7 +578,7 @@
     constructor(ctx) {
       this.ctx = ctx;
     }
-    draw(map, player, police, bullets, bloodEffects, explosionEffects, camera, score) {
+    draw(map, player, police, bullets, bloodEffects, explosionEffects, hearts, camera, score) {
       const ctx = this.ctx;
       ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
       map.drawTiles(ctx, camera.x, camera.y);
@@ -590,6 +590,10 @@
       }
       for (const effect of bloodEffects) {
         effect.draw(ctx, camera.x, camera.y);
+      }
+      for (const heart of hearts) {
+        if (heart.active)
+          heart.draw(ctx, camera.x, camera.y);
       }
       for (const car of map.cars) {
         if (car.active)
@@ -727,7 +731,7 @@
       this.updateDirection(dx, dy);
     }
     /** Autonomous NPC driving — moves the car when no player is driving. */
-    updateNpc(dt, isRoad) {
+    updateNpc(dt, isRoad, otherCars) {
       if (this.hitCooldown > 0)
         this.hitCooldown -= dt;
       if (this.destroyed) {
@@ -741,7 +745,12 @@
       const cx = nextX + this.width / 2;
       const cy = nextY + this.height / 2;
       const offWorld = nextX < 0 || nextX + this.width > WORLD_W || nextY < 0 || nextY + this.height > WORLD_H;
-      if (offWorld || !isRoad(cx, cy)) {
+      const collidesWithCar = otherCars?.some((other) => {
+        if (other === this || other.destroyed)
+          return false;
+        return nextX < other.x + other.width && nextX + this.width > other.x && nextY < other.y + other.height && nextY + this.height > other.y;
+      }) ?? false;
+      if (offWorld || !isRoad(cx, cy) || collidesWithCar) {
         this.npcVelocityX *= -1;
         this.npcVelocityY *= -1;
       } else {
@@ -871,7 +880,7 @@
     constructor(x, y) {
       super(x, y);
       this.color = "#ffdd44";
-      this.carSpeed = 100;
+      this.carSpeed = 150;
       this.width = 12 * 4;
       this.height = 6 * 4;
     }
@@ -882,7 +891,7 @@
     constructor(x, y) {
       super(x, y);
       this.color = "#cc2222";
-      this.carSpeed = 160;
+      this.carSpeed = 240;
       this.width = 14 * 4;
       this.height = 5 * 4;
     }
@@ -893,7 +902,7 @@
     constructor() {
       super(...arguments);
       this.color = "#111111";
-      this.carSpeed = 120;
+      this.carSpeed = 180;
     }
   };
 
@@ -902,7 +911,7 @@
     constructor(x, y) {
       super(x, y);
       this.color = "#336699";
-      this.carSpeed = 80;
+      this.carSpeed = 120;
       this.width = 18 * 4;
       this.height = 8 * 4;
     }
@@ -913,7 +922,7 @@
     constructor(x, y) {
       super(x, y);
       this.color = "#eeeeee";
-      this.carSpeed = 110;
+      this.carSpeed = 165;
       this.width = 16 * 4;
       this.height = 8 * 4;
     }
@@ -1006,13 +1015,13 @@
       this.ENGINE_FREQ_MOVING = 110;
     }
     static {
-      this.ENGINE_GAIN_IDLE = 0.05;
+      this.ENGINE_GAIN_IDLE = 0.025;
     }
     static {
-      this.ENGINE_GAIN_MOVING = 0.09;
+      this.ENGINE_GAIN_MOVING = 0.045;
     }
     static {
-      this.ENGINE_GAIN_START = 0.06;
+      this.ENGINE_GAIN_START = 0.03;
     }
     static {
       this.ENGINE_RAMP_TIME = 0.15;
@@ -1217,6 +1226,111 @@
     }
   };
 
+  // src/entities/Heart.ts
+  var Heart = class _Heart {
+    constructor(x, y) {
+      this.active = true;
+      this.animTimer = 0;
+      this.x = x;
+      this.y = y;
+      this.width = 10 * PIXEL_SIZE;
+      this.height = 8 * PIXEL_SIZE;
+    }
+    static {
+      this.PULSE_AMPLITUDE = 0.1;
+    }
+    static {
+      this.PULSE_FREQUENCY = 4;
+    }
+    update(dt) {
+      this.animTimer += dt;
+    }
+    draw(ctx, camX, camY) {
+      const sx = this.x - camX;
+      const sy = this.y - camY;
+      const ps = PIXEL_SIZE;
+      const scale = 1 + _Heart.PULSE_AMPLITUDE * Math.sin(this.animTimer * _Heart.PULSE_FREQUENCY);
+      ctx.save();
+      ctx.translate(sx + this.width / 2, sy + this.height / 2);
+      ctx.scale(scale, scale);
+      ctx.translate(-this.width / 2, -this.height / 2);
+      const pixels = [
+        // Row 0
+        [1, 0],
+        [2, 0],
+        [4, 0],
+        [5, 0],
+        [7, 0],
+        [8, 0],
+        // Row 1
+        [0, 1],
+        [1, 1],
+        [2, 1],
+        [3, 1],
+        [4, 1],
+        [5, 1],
+        [6, 1],
+        [7, 1],
+        [8, 1],
+        [9, 1],
+        // Row 2
+        [0, 2],
+        [1, 2],
+        [2, 2],
+        [3, 2],
+        [4, 2],
+        [5, 2],
+        [6, 2],
+        [7, 2],
+        [8, 2],
+        [9, 2],
+        // Row 3
+        [0, 3],
+        [1, 3],
+        [2, 3],
+        [3, 3],
+        [4, 3],
+        [5, 3],
+        [6, 3],
+        [7, 3],
+        [8, 3],
+        [9, 3],
+        // Row 4
+        [1, 4],
+        [2, 4],
+        [3, 4],
+        [4, 4],
+        [5, 4],
+        [6, 4],
+        [7, 4],
+        [8, 4],
+        // Row 5
+        [2, 5],
+        [3, 5],
+        [4, 5],
+        [5, 5],
+        [6, 5],
+        [7, 5],
+        // Row 6
+        [3, 6],
+        [4, 6],
+        [5, 6],
+        [6, 6],
+        // Row 7
+        [4, 7],
+        [5, 7]
+      ];
+      ctx.fillStyle = "#ff2244";
+      for (const [px, py] of pixels) {
+        ctx.fillRect(px * ps, py * ps, ps, ps);
+      }
+      ctx.fillStyle = "#ff88aa";
+      ctx.fillRect(1 * ps, 1 * ps, ps, ps);
+      ctx.fillRect(7 * ps, 1 * ps, ps, ps);
+      ctx.restore();
+    }
+  };
+
   // src/Game.ts
   var Game = class _Game {
     constructor(canvas2) {
@@ -1224,11 +1338,13 @@
       this.bullets = [];
       this.bloodEffects = [];
       this.explosionEffects = [];
+      this.hearts = [];
       this.running = false;
       this.score = 0;
       this.lastTime = 0;
       this.gameOverTimer = 0;
       this.gameOver = false;
+      this.heartSpawnTimer = 0;
       this.canvas = canvas2;
       this.ctx = canvas2.getContext("2d");
       this.input = new InputHandler();
@@ -1237,6 +1353,26 @@
       this.player = new Player(10 * TILE_PX, 10 * TILE_PX);
       this.renderer = new Renderer(this.ctx);
       this.sounds = new SoundManager();
+    }
+    static {
+      this.HEART_SPAWN_INTERVAL = 60;
+    }
+    static {
+      this.HEART_HEAL_AMOUNT = 25;
+    }
+    static {
+      this.HEART_SPAWN_POSITIONS = [
+        [10, 5],
+        [18, 5],
+        [26, 5],
+        [5, 10],
+        [15, 10],
+        [25, 10],
+        [10, 15],
+        [18, 15],
+        [5, 20],
+        [25, 20]
+      ];
     }
     static {
       this.PEDESTRIAN_DAMAGE_MULTIPLIER = 4;
@@ -1274,19 +1410,19 @@
         this.map.pedestrians.push(new Pedestrian(tx * TILE_PX, ty * TILE_PX, i % 3));
       }
       const beetle = new VWBeetle(12 * TILE_PX, 5 * TILE_PX);
-      beetle.npcVelocityX = 70;
+      beetle.npcVelocityX = 105;
       this.map.cars.push(beetle);
       const porsche = new Porsche(20 * TILE_PX, 5 * TILE_PX);
-      porsche.npcVelocityX = -90;
+      porsche.npcVelocityX = -135;
       this.map.cars.push(porsche);
       const van = new Van(9 * TILE_PX, 15 * TILE_PX);
-      van.npcVelocityX = 55;
+      van.npcVelocityX = 82;
       this.map.cars.push(van);
       const ambulance = new Ambulance(22 * TILE_PX, 15 * TILE_PX);
-      ambulance.npcVelocityX = -65;
+      ambulance.npcVelocityX = -97;
       this.map.cars.push(ambulance);
       const policeCar = new PoliceCar(30 * TILE_PX, 15 * TILE_PX);
-      policeCar.npcVelocityX = 80;
+      policeCar.npcVelocityX = 120;
       this.map.cars.push(policeCar);
       this.police.push(new Policeman(12 * TILE_PX, 12 * TILE_PX, this.player));
       this.police.push(new Policeman(20 * TILE_PX, 20 * TILE_PX, this.player));
@@ -1348,7 +1484,7 @@
         this.clampToWorld(ped);
       }
       for (const car of this.map.cars) {
-        car.updateNpc(dt, (x, y) => this.map.isRoad(x, y));
+        car.updateNpc(dt, (x, y) => this.map.isRoad(x, y), this.map.cars);
       }
       for (const b of this.bullets) {
         b.update(dt);
@@ -1365,6 +1501,24 @@
         effect.update(dt);
       for (const effect of this.explosionEffects)
         effect.update(dt);
+      for (const heart of this.hearts)
+        heart.update(dt);
+      this.heartSpawnTimer += dt;
+      if (this.heartSpawnTimer >= _Game.HEART_SPAWN_INTERVAL) {
+        this.heartSpawnTimer = 0;
+        this.spawnHeart();
+      }
+      const playerEntity = this.player.inCar ?? this.player;
+      this.hearts = this.hearts.filter((heart) => {
+        if (!heart.active)
+          return false;
+        if (this.overlaps(heart, playerEntity)) {
+          heart.active = false;
+          this.player.health = Math.min(this.player.maxHealth, this.player.health + _Game.HEART_HEAL_AMOUNT);
+          return false;
+        }
+        return true;
+      });
       this.bullets = this.bullets.filter((b) => b.active);
       this.police = this.police.filter((c) => c.active);
       this.bloodEffects = this.bloodEffects.filter((e) => e.active);
@@ -1530,8 +1684,12 @@
       const pos = roadTiles[Math.floor(Math.random() * roadTiles.length)];
       this.police.push(new Policeman(pos[0], pos[1], this.player));
     }
+    spawnHeart() {
+      const pos = _Game.HEART_SPAWN_POSITIONS[Math.floor(Math.random() * _Game.HEART_SPAWN_POSITIONS.length)];
+      this.hearts.push(new Heart(pos[0] * TILE_PX, pos[1] * TILE_PX));
+    }
     draw() {
-      this.renderer.draw(this.map, this.player, this.police, this.bullets, this.bloodEffects, this.explosionEffects, this.camera, this.score);
+      this.renderer.draw(this.map, this.player, this.police, this.bullets, this.bloodEffects, this.explosionEffects, this.hearts, this.camera, this.score);
       if (this.gameOver) {
         const ctx = this.ctx;
         ctx.fillStyle = "rgba(0,0,0,0.7)";
@@ -1556,6 +1714,8 @@
       this.bullets = [];
       this.bloodEffects = [];
       this.explosionEffects = [];
+      this.hearts = [];
+      this.heartSpawnTimer = 0;
       this.player = new Player(10 * TILE_PX, 10 * TILE_PX);
       this.map = new GameMap();
       this.initializeEntities();

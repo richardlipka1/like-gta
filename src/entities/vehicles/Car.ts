@@ -93,7 +93,7 @@ export abstract class Car extends Entity {
     }
 
     /** Autonomous NPC driving — moves the car when no player is driving. */
-    updateNpc(dt: number, isRoad: (x: number, y: number) => boolean): void {
+    updateNpc(dt: number, isRoad: (x: number, y: number) => boolean, otherCars?: Car[]): void {
         if (this.hitCooldown > 0) this.hitCooldown -= dt;
 
         if (this.destroyed) {
@@ -112,7 +112,17 @@ export abstract class Car extends Entity {
 
         const offWorld = nextX < 0 || nextX + this.width > WORLD_W || nextY < 0 || nextY + this.height > WORLD_H;
 
-        if (offWorld || !isRoad(cx, cy)) {
+        const collidesWithCar = otherCars?.some(other => {
+            if (other === this || other.destroyed) return false;
+            return (
+                nextX < other.x + other.width &&
+                nextX + this.width > other.x &&
+                nextY < other.y + other.height &&
+                nextY + this.height > other.y
+            );
+        }) ?? false;
+
+        if (offWorld || !isRoad(cx, cy) || collidesWithCar) {
             // Reverse direction
             this.npcVelocityX *= -1;
             this.npcVelocityY *= -1;

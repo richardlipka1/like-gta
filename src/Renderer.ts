@@ -5,6 +5,7 @@ import { Bullet } from './entities/Bullet';
 import { Camera } from './Camera';
 import { BloodEffect } from './entities/BloodEffect';
 import { ExplosionEffect } from './entities/ExplosionEffect';
+import { Heart } from './entities/Heart';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from './constants';
 
 export class Renderer {
@@ -21,6 +22,7 @@ export class Renderer {
         bullets: Bullet[],
         bloodEffects: BloodEffect[],
         explosionEffects: ExplosionEffect[],
+        hearts: Heart[],
         camera: Camera,
         score: number
     ): void {
@@ -39,6 +41,10 @@ export class Renderer {
 
         for (const effect of bloodEffects) {
             effect.draw(ctx, camera.x, camera.y);
+        }
+
+        for (const heart of hearts) {
+            if (heart.active) heart.draw(ctx, camera.x, camera.y);
         }
 
         for (const car of map.cars) {
