@@ -256,6 +256,13 @@
         return true;
       return this.tiles[row][col] === 3 /* BUILDING */;
     }
+    isRoad(worldX, worldY) {
+      const col = Math.floor(worldX / TILE_PX);
+      const row = Math.floor(worldY / TILE_PX);
+      if (col < 0 || col >= MAP_TILES_W || row < 0 || row >= MAP_TILES_H)
+        return false;
+      return this.tiles[row][col] === 1 /* ROAD */;
+    }
   };
 
   // src/entities/Entity.ts
@@ -633,6 +640,9 @@
       super();
       this.driver = null;
       this.direction = "right";
+      /** NPC autonomous movement velocity (px/s). Set to non-zero to enable NPC driving. */
+      this.npcVelocityX = 0;
+      this.npcVelocityY = 0;
       this.x = x;
       this.y = y;
       this.width = 14 * PIXEL_SIZE;
@@ -663,19 +673,15 @@
       let dx = 0, dy = 0;
       if (input.isDown("ArrowUp") || input.isDown("w") || input.isDown("W")) {
         dy = -1;
-        this.direction = "up";
       }
       if (input.isDown("ArrowDown") || input.isDown("s") || input.isDown("S")) {
         dy = 1;
-        this.direction = "down";
       }
       if (input.isDown("ArrowLeft") || input.isDown("a") || input.isDown("A")) {
         dx = -1;
-        this.direction = "left";
       }
       if (input.isDown("ArrowRight") || input.isDown("d") || input.isDown("D")) {
         dx = 1;
-        this.direction = "right";
       }
       if (dx !== 0 && dy !== 0) {
         dx *= 0.707;
@@ -685,22 +691,63 @@
       this.y += dy * this.carSpeed * dt;
       this.driver.x = this.x;
       this.driver.y = this.y;
+      this.updateDirection(dx, dy);
+    }
+    /** Autonomous NPC driving — moves the car when no player is driving. */
+    updateNpc(dt, isRoad) {
+      if (this.driver || this.npcVelocityX === 0 && this.npcVelocityY === 0)
+        return;
+      const nextX = this.x + this.npcVelocityX * dt;
+      const nextY = this.y + this.npcVelocityY * dt;
+      const cx = nextX + this.width / 2;
+      const cy = nextY + this.height / 2;
+      const offWorld = nextX < 0 || nextX + this.width > WORLD_W || nextY < 0 || nextY + this.height > WORLD_H;
+      if (offWorld || !isRoad(cx, cy)) {
+        this.npcVelocityX *= -1;
+        this.npcVelocityY *= -1;
+      } else {
+        this.x = nextX;
+        this.y = nextY;
+      }
+      this.updateDirection(this.npcVelocityX, this.npcVelocityY);
+    }
+    updateDirection(dx, dy) {
+      if (dx > 0)
+        this.direction = "right";
+      else if (dx < 0)
+        this.direction = "left";
+      else if (dy > 0)
+        this.direction = "down";
+      else if (dy < 0)
+        this.direction = "up";
     }
     update(_dt) {
     }
     draw(ctx, camX, camY) {
       const sx = this.x - camX;
       const sy = this.y - camY;
+      ctx.save();
+      const facingLeft = this.direction === "left";
+      if (facingLeft) {
+        ctx.translate(sx + this.width, sy);
+        ctx.scale(-1, 1);
+        this.drawCarBody(ctx, 0, 0);
+      } else {
+        this.drawCarBody(ctx, sx, sy);
+      }
+      ctx.restore();
+    }
+    drawCarBody(ctx, ox, oy) {
       ctx.fillStyle = this.color;
-      ctx.fillRect(sx, sy, this.width, this.height);
+      ctx.fillRect(ox, oy, this.width, this.height);
       ctx.fillStyle = "#222222";
-      ctx.fillRect(sx, sy, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
-      ctx.fillRect(sx + this.width - PIXEL_SIZE * 2, sy, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
-      ctx.fillRect(sx, sy + this.height - PIXEL_SIZE * 2, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
-      ctx.fillRect(sx + this.width - PIXEL_SIZE * 2, sy + this.height - PIXEL_SIZE * 2, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
+      ctx.fillRect(ox, oy, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
+      ctx.fillRect(ox + this.width - PIXEL_SIZE * 2, oy, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
+      ctx.fillRect(ox, oy + this.height - PIXEL_SIZE * 2, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
+      ctx.fillRect(ox + this.width - PIXEL_SIZE * 2, oy + this.height - PIXEL_SIZE * 2, PIXEL_SIZE * 2, PIXEL_SIZE * 2);
       ctx.fillStyle = "#aaddff";
-      ctx.fillRect(sx + PIXEL_SIZE * 3, sy + PIXEL_SIZE, PIXEL_SIZE * 4, PIXEL_SIZE * 2);
-      ctx.fillRect(sx + PIXEL_SIZE * 8, sy + PIXEL_SIZE, PIXEL_SIZE * 3, PIXEL_SIZE * 2);
+      ctx.fillRect(ox + PIXEL_SIZE * 3, oy + PIXEL_SIZE, PIXEL_SIZE * 4, PIXEL_SIZE * 2);
+      ctx.fillRect(ox + PIXEL_SIZE * 8, oy + PIXEL_SIZE, PIXEL_SIZE * 3, PIXEL_SIZE * 2);
     }
   };
 
@@ -796,6 +843,159 @@
     }
   };
 
+  // src/SoundManager.ts
+  var SoundManager = class _SoundManager {
+    constructor() {
+      this.audioCtx = null;
+      this.engineOsc = null;
+      this.engineGain = null;
+      this.walkTimer = 0;
+    }
+    static {
+      this.WALK_INTERVAL = 0.28;
+    }
+    static {
+      this.SHOOT_FREQ_START = 880;
+    }
+    static {
+      this.SHOOT_FREQ_END = 110;
+    }
+    static {
+      this.SHOOT_DURATION = 0.18;
+    }
+    static {
+      this.SHOOT_GAIN = 0.25;
+    }
+    static {
+      this.HORN_FREQ = 466;
+    }
+    static {
+      this.HORN_GAIN = 0.2;
+    }
+    static {
+      this.HORN_DURATION = 0.45;
+    }
+    static {
+      this.WALK_FREQ = 130;
+    }
+    static {
+      this.WALK_GAIN = 0.07;
+    }
+    static {
+      this.WALK_DURATION = 0.07;
+    }
+    static {
+      this.ENGINE_FREQ_IDLE = 55;
+    }
+    static {
+      this.ENGINE_FREQ_MOVING = 110;
+    }
+    static {
+      this.ENGINE_GAIN_IDLE = 0.05;
+    }
+    static {
+      this.ENGINE_GAIN_MOVING = 0.09;
+    }
+    static {
+      this.ENGINE_GAIN_START = 0.06;
+    }
+    static {
+      this.ENGINE_RAMP_TIME = 0.15;
+    }
+    getCtx() {
+      if (!this.audioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        this.audioCtx = new AudioCtx();
+      }
+      return this.audioCtx;
+    }
+    playShoot() {
+      const ctx = this.getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "square";
+      osc.frequency.setValueAtTime(_SoundManager.SHOOT_FREQ_START, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(_SoundManager.SHOOT_FREQ_END, ctx.currentTime + _SoundManager.SHOOT_DURATION);
+      gain.gain.setValueAtTime(_SoundManager.SHOOT_GAIN, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + _SoundManager.SHOOT_DURATION);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + _SoundManager.SHOOT_DURATION);
+    }
+    playHorn() {
+      const ctx = this.getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "square";
+      osc.frequency.setValueAtTime(_SoundManager.HORN_FREQ, ctx.currentTime);
+      gain.gain.setValueAtTime(_SoundManager.HORN_GAIN, ctx.currentTime);
+      gain.gain.setValueAtTime(_SoundManager.HORN_GAIN, ctx.currentTime + 0.32);
+      gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + _SoundManager.HORN_DURATION);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + _SoundManager.HORN_DURATION);
+    }
+    updateWalk(isWalking, dt) {
+      if (!isWalking) {
+        this.walkTimer = 0;
+        return;
+      }
+      this.walkTimer -= dt;
+      if (this.walkTimer <= 0) {
+        this.walkTimer = _SoundManager.WALK_INTERVAL;
+        this.playFootstep();
+      }
+    }
+    playFootstep() {
+      const ctx = this.getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "square";
+      osc.frequency.setValueAtTime(_SoundManager.WALK_FREQ, ctx.currentTime);
+      gain.gain.setValueAtTime(_SoundManager.WALK_GAIN, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(1e-3, ctx.currentTime + _SoundManager.WALK_DURATION);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + _SoundManager.WALK_DURATION);
+    }
+    startEngine() {
+      if (this.engineOsc)
+        return;
+      const ctx = this.getCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(_SoundManager.ENGINE_FREQ_IDLE, ctx.currentTime);
+      gain.gain.setValueAtTime(_SoundManager.ENGINE_GAIN_START, ctx.currentTime);
+      osc.start(ctx.currentTime);
+      this.engineOsc = osc;
+      this.engineGain = gain;
+    }
+    updateEngine(isMoving) {
+      if (!this.engineOsc || !this.engineGain)
+        return;
+      const ctx = this.getCtx();
+      const targetFreq = isMoving ? _SoundManager.ENGINE_FREQ_MOVING : _SoundManager.ENGINE_FREQ_IDLE;
+      const targetGain = isMoving ? _SoundManager.ENGINE_GAIN_MOVING : _SoundManager.ENGINE_GAIN_IDLE;
+      this.engineOsc.frequency.setTargetAtTime(targetFreq, ctx.currentTime, _SoundManager.ENGINE_RAMP_TIME);
+      this.engineGain.gain.setTargetAtTime(targetGain, ctx.currentTime, _SoundManager.ENGINE_RAMP_TIME);
+    }
+    stopEngine() {
+      if (!this.engineOsc || !this.engineGain)
+        return;
+      const ctx = this.getCtx();
+      this.engineGain.gain.setTargetAtTime(1e-3, ctx.currentTime, 0.1);
+      this.engineOsc.stop(ctx.currentTime + 0.4);
+      this.engineOsc = null;
+      this.engineGain = null;
+    }
+  };
+
   // src/Game.ts
   var Game = class _Game {
     constructor(canvas2) {
@@ -813,6 +1013,7 @@
       this.map = new GameMap();
       this.player = new Player(10 * TILE_PX, 10 * TILE_PX);
       this.renderer = new Renderer(this.ctx);
+      this.sounds = new SoundManager();
     }
     init() {
       this.canvas.width = CANVAS_WIDTH;
@@ -840,11 +1041,21 @@
         const [tx, ty] = _Game.PED_POSITIONS[i];
         this.map.pedestrians.push(new Pedestrian(tx * TILE_PX, ty * TILE_PX, i % 3));
       }
-      this.map.cars.push(new VWBeetle(12 * TILE_PX, 5 * TILE_PX));
-      this.map.cars.push(new Porsche(20 * TILE_PX, 5 * TILE_PX));
-      this.map.cars.push(new Van(9 * TILE_PX, 15 * TILE_PX));
-      this.map.cars.push(new Ambulance(22 * TILE_PX, 15 * TILE_PX));
-      this.map.cars.push(new PoliceCar(30 * TILE_PX, 15 * TILE_PX));
+      const beetle = new VWBeetle(12 * TILE_PX, 5 * TILE_PX);
+      beetle.npcVelocityX = 70;
+      this.map.cars.push(beetle);
+      const porsche = new Porsche(20 * TILE_PX, 5 * TILE_PX);
+      porsche.npcVelocityX = -90;
+      this.map.cars.push(porsche);
+      const van = new Van(9 * TILE_PX, 15 * TILE_PX);
+      van.npcVelocityX = 55;
+      this.map.cars.push(van);
+      const ambulance = new Ambulance(22 * TILE_PX, 15 * TILE_PX);
+      ambulance.npcVelocityX = -65;
+      this.map.cars.push(ambulance);
+      const policeCar = new PoliceCar(30 * TILE_PX, 15 * TILE_PX);
+      policeCar.npcVelocityX = 80;
+      this.map.cars.push(policeCar);
       this.police.push(new Policeman(12 * TILE_PX, 12 * TILE_PX, this.player));
       this.police.push(new Policeman(20 * TILE_PX, 20 * TILE_PX, this.player));
       this.police.push(new Policeman(30 * TILE_PX, 10 * TILE_PX, this.player));
@@ -865,13 +1076,30 @@
         }
         return;
       }
-      this.player.handleInput(this.input, dt, this.bullets, () => this.handleEnterCar());
       if (this.player.inCar) {
+        const prevX = this.player.inCar.x;
+        const prevY = this.player.inCar.y;
         this.player.inCar.handleInput(this.input, dt);
+        const isMoving = this.player.inCar.x !== prevX || this.player.inCar.y !== prevY;
+        this.sounds.updateEngine(isMoving);
+        if (this.input.justPressed("h") || this.input.justPressed("H")) {
+          this.sounds.playHorn();
+        }
         if (this.input.justPressed("e") || this.input.justPressed("E")) {
           const car = this.player.inCar;
           this.player.inCar = null;
           car.exit();
+          this.sounds.stopEngine();
+        }
+      } else {
+        const prevX = this.player.x;
+        const prevY = this.player.y;
+        const bulletsBefore = this.bullets.length;
+        this.player.handleInput(this.input, dt, this.bullets, () => this.handleEnterCar());
+        const isWalking = this.player.x !== prevX || this.player.y !== prevY;
+        this.sounds.updateWalk(isWalking, dt);
+        if (this.bullets.length > bulletsBefore) {
+          this.sounds.playShoot();
         }
       }
       this.player.update(dt);
@@ -886,6 +1114,9 @@
       for (const ped of this.map.pedestrians) {
         ped.update(dt);
         this.clampToWorld(ped);
+      }
+      for (const car of this.map.cars) {
+        car.updateNpc(dt, (x, y) => this.map.isRoad(x, y));
       }
       for (const b of this.bullets) {
         b.update(dt);
@@ -927,6 +1158,7 @@
         if (car.canEnter(this.player)) {
           car.enter(this.player);
           this.player.inCar = car;
+          this.sounds.startEngine();
           break;
         }
       }
@@ -1012,6 +1244,7 @@
       }
     }
     reset() {
+      this.sounds.stopEngine();
       this.score = 0;
       this.gameOver = false;
       this.gameOverTimer = 0;
